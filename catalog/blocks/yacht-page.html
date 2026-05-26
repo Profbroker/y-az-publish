@@ -1,0 +1,1369 @@
+﻿<!--
+  tilda-yacht-page.html
+
+  ВЕРСИЯ: 2026-05-08-pa-flat
+  Что нового (08.05.2026): добавлен price-anchor блок (3 пресета:
+  короткая / популярная / полный день) вместо «от X ₼ / час».
+  Пресеты задаются для каждой яхты в Yachts CSV колонками
+  pa_low_h, pa_mid_h, pa_high_h. Mid подсвечен как «популярный».
+
+  Расчёт цены:
+    h1..h9 в Prices CSV — это РЕЙТЫ ОТДЕЛЬНЫХ ЧАСОВ:
+      h1 = рейт 1-го часа, h2 = рейт 2-го часа, и т.д.
+    Total за N часов = сумма h1..hN + fee.
+    Например для Alora high (h1=250, h2=200, h3=200, h4=200, h5=200, h6=150, fee=50):
+      1 час  → 250 + 50 = 300 ₼ (рейт 300 ₼/ч)
+      2 часа → 250+200 + 50 = 500 ₼ (средний рейт 250 ₼/ч)
+      6 часов → 250+200+200+200+200+150 + 50 = 1250 ₼ (средний рейт ~208 ₼/ч)
+
+  Сезонность: по дате из Settings (season_high_start / season_high_end)
+  определяется текущий сезон, и из Prices CSV берётся строка для
+  этого сезона. Приоритет: current → any → другой сезон. Settings
+  лист может быть с рус. («ключ», «значение») или англ. заголовками
+  колонок — парсер берёт первые 2 колонки по позиции.
+
+  Если колонок нет / Prices CSV недоступен — fallback на старый
+  «от X ₼ / час» (страница не ломается).
+
+  Что нового (07.05.2026): тег h1 заменён на h2. Единственный H1
+  страницы ставится отдельным Tilda-блоком (SEO).
+
+  Проверка задеплоенной версии:
+    curl -s https://yacht.az/ru/yachts/alora | grep 'yz-yp-version'
+
+  Шаблон страницы каждой яхты. Вставить как T123 Full Width.
+  Дизайн: yacht-az/webdesign/design1/design_handoff_minimal (Minimal Catalog).
+
+  Как добавить новую яхту:
+  1. Залить фото в Tilda, скопировать URL
+  2. Добавить строку в Google Sheets (лист Yachts)
+  3. Скопировать эту страницу-шаблон в Tilda для каждого языка:
+     /ru/alora   /en/alora   /az/alora
+  4. Всё — контент подтянется из таблицы по slug в URL автоматически
+
+  Slug = последний сегмент URL: /ru/alora → alora
+
+  CSV колонки (Yachts sheet):
+    slug, active, name, type_ru, type_en, type_az,
+    shipyard, model, year,
+    length, beam, guests, cabins,
+    shower, toilet, platform,
+    engine, marina,
+    price_from,
+    desc_full_ru, desc_full_en, desc_full_az,
+    photo_main, photos (pipe-separated)
+
+  Этап: RU-first. Полировка на /ru/alora, далее клонируется на /en и /az.
+-->
+
+<!-- Контент рендерится сюда -->
+<div id="yz-yp" data-yz-yp-version="2026-05-08-pa-flat"></div>
+
+<!-- Лайтбокс (скрыт по умолчанию) -->
+<div id="yz-lb" role="dialog" aria-modal="true" aria-label="Галерея">
+  <button id="yz-lb-close" aria-label="Закрыть">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+  </button>
+  <button id="yz-lb-prev" aria-label="Предыдущее фото">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+  </button>
+  <div id="yz-lb-img-wrap">
+    <img id="yz-lb-img" src="" alt="">
+  </div>
+  <button id="yz-lb-next" aria-label="Следующее фото">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+  </button>
+  <div id="yz-lb-counter"></div>
+</div>
+
+<style>
+/* ── tokens ── */
+#yz-yp {
+  --navy:       #0E375E;
+  --navy-deep:  #081C32;
+  --navy-hover: #0A2A4A;
+  --ink:        #0E1726;
+  --ink-soft:   #3A4456;
+  --ink-muted:  #7A8294;
+  --rule:       #E8E5DD;
+  --paper:      #FBFAF6;
+  --white:      #FFFFFF;
+
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--ink);
+  background: var(--white);
+}
+
+#yz-yp, #yz-yp * { box-sizing: border-box; }
+#yz-yp a { text-decoration: none; }
+
+/* ── section wrappers ── */
+.yz-sec {
+  padding-left: 48px;
+  padding-right: 48px;
+}
+.yz-sec-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+/* ── HERO ──
+   padding-top = 96px (высота fixed-навбара) + 32px (наш отступ).
+   Без этого breadcrumb на верхушке hero попадает в зону fixed-шапки
+   с z-index:1000 — тапы перехватывает шапка (логотип → редирект
+   на главную). Подняли hero ниже, breadcrumb теперь в чистой зоне. */
+.yz-hero {
+  background: var(--white);
+  padding: 128px 48px 48px;
+}
+
+.yz-breadcrumb {
+  font-size: 13px;
+  color: var(--ink-muted);
+  margin-bottom: 24px;
+  letter-spacing: 0.1px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 0;
+}
+#yz-yp .yz-breadcrumb a { color: var(--ink-muted); transition: color 0.15s, background 0.15s; }
+#yz-yp .yz-breadcrumb a:hover { color: var(--ink); }
+.yz-breadcrumb .yz-bc-sep { margin: 0 8px; opacity: 0.5; }
+.yz-breadcrumb .yz-bc-current { color: var(--ink); font-weight: 500; padding: 6px 8px; }
+.yz-breadcrumb .yz-bc-root { padding: 6px 8px 6px 0; margin-right: 4px; }
+.yz-breadcrumb .yz-bc-fleet { display: inline-flex; flex-wrap: wrap; gap: 2px 0; align-items: center; }
+.yz-breadcrumb .yz-bc-yacht {
+  white-space: nowrap;
+  padding: 6px 10px;
+  /* touch-action manipulation убирает 300ms delay на тап в старых
+     мобильных браузерах. min-height гарантирует тач-target ≥36px. */
+  touch-action: manipulation;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+}
+#yz-yp .yz-breadcrumb a.yz-bc-yacht:hover { background: var(--paper); }
+
+@media (max-width: 640px) {
+  .yz-breadcrumb { font-size: 14px; }
+  .yz-breadcrumb .yz-bc-yacht { padding: 8px 12px; min-height: 36px; }
+  .yz-breadcrumb .yz-bc-current { padding: 8px 12px; }
+}
+
+.yz-title-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 48px;
+  margin-bottom: 36px;
+}
+
+.yz-title-left { min-width: 0; }
+
+.yz-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--white);
+}
+.yz-status-pill .yz-pill-dot {
+  width: 6px; height: 6px;
+  background: var(--navy);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.yz-h1 {
+  font-size: 56px;
+  font-weight: 600;
+  line-height: 1.0;
+  letter-spacing: -1.4px;
+  color: var(--ink);
+  margin: 0;
+}
+
+.yz-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  font-size: 16px;
+  color: var(--ink-soft);
+  margin-top: 12px;
+}
+
+.yz-title-right {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-shrink: 0;
+}
+
+.yz-price {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.yz-price-from {
+  font-size: 13px;
+  color: var(--ink-muted);
+  letter-spacing: 0.2px;
+}
+.yz-price-value {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: var(--ink);
+}
+
+/* ── price-anchor (3 пресета вместо «от X ₼ / час») ── */
+.yz-pa {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 18px;
+  white-space: nowrap;
+}
+.yz-pa-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  position: relative;
+  padding: 0 2px;
+}
+.yz-pa-h {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+.yz-pa-total {
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--ink-muted);
+  margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.yz-pa-rate {
+  font-size: 10px;
+  color: var(--ink-muted);
+  margin-top: 2px;
+  font-variant-numeric: tabular-nums;
+}
+/* Все карточки одного стиля (серый ink-muted), без визуального
+   выделения «популярной». Класс is-popular остаётся в HTML на
+   случай если захотим вернуть подсветку — пока без правил. */
+
+/* Eyebrow «Часто выбирают» — slева от карточек в той же строке.
+   align-self: center центрирует вертикально внутри flex-row .yz-pa.
+   Текст переносится в 2 строки (max-width), правый край выровнен
+   к карточкам. */
+.yz-pa-eyebrow {
+  align-self: center;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 1.2px;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  text-align: right;
+  max-width: 80px;
+  white-space: normal;
+  margin-right: 4px;
+}
+
+/* ── primary / secondary buttons ── */
+.yz-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 28px;
+  border-radius: 0;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+  white-space: nowrap;
+}
+/* префикс #yz-yp нужен чтобы перебить Tilda site-color, который красит все <a> в brand-color */
+#yz-yp .yz-btn-primary { background: var(--navy); color: var(--white); }
+#yz-yp .yz-btn-primary:hover { background: var(--navy-hover); }
+
+#yz-yp .yz-btn-inverted { background: var(--white); color: var(--navy); }
+#yz-yp .yz-btn-inverted:hover { background: var(--paper); }
+
+/* secondary: белая с navy-бордером (через inset shadow — сохраняет ту же высоту что и primary) */
+#yz-yp .yz-btn-secondary {
+  background: var(--white);
+  color: var(--navy);
+  box-shadow: inset 0 0 0 1px var(--navy);
+}
+#yz-yp .yz-btn-secondary:hover { background: var(--paper); }
+
+#yz-yp .yz-btn-ghost {
+  background: transparent;
+  color: var(--white);
+  border: 1px solid rgba(255,255,255,0.7);
+}
+#yz-yp .yz-btn-ghost:hover { background: rgba(255,255,255,0.08); }
+
+/* ── HERO gallery grid ── */
+.yz-gal {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 8px;
+  height: 560px;
+}
+.yz-gal-cell {
+  position: relative;
+  overflow: hidden;
+  background: var(--paper);
+  cursor: pointer;
+}
+.yz-gal-cell img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.4s ease;
+}
+.yz-gal-cell:hover img { transform: scale(1.04); }
+
+.yz-gal-empty { background: var(--paper); cursor: default; }
+
+.yz-gal-tall { grid-row: span 2; }
+
+.yz-gal-more {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  text-align: center;
+  padding: 24px;
+  transition: background 0.18s ease;
+}
+.yz-gal-more:hover { background: #F5F1E7; }
+.yz-gal-more-label {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink);
+  letter-spacing: -0.2px;
+}
+.yz-gal-more-sub {
+  font-size: 12px;
+  color: var(--ink-muted);
+}
+
+/* ── SPECS section ── */
+.yz-specs {
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+  padding: 40px 48px 56px;
+}
+.yz-specs-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+}
+.yz-h2 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  margin: 0;
+}
+.yz-specs-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-left: 1px solid var(--rule);
+  border-top: 1px solid var(--rule);
+  background: var(--rule);
+  gap: 1px;
+}
+.yz-spec {
+  background: var(--white);
+  padding: 20px 24px;
+}
+.yz-spec-label {
+  font-size: 11px;
+  color: var(--ink-muted);
+  letter-spacing: 0.1px;
+}
+.yz-spec-value {
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.2px;
+  color: var(--ink);
+  margin-top: 6px;
+}
+
+/* ── DESCRIPTION + INCLUDED ── */
+.yz-content {
+  background: var(--white);
+  padding: 72px 48px;
+}
+.yz-content-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+  align-items: start;
+}
+.yz-desc-h2 { margin-bottom: 18px; }
+.yz-desc-text {
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--ink-soft);
+  max-width: 560px;
+}
+.yz-desc-text p + p { margin-top: 16px; }
+
+.yz-captain {
+  display: flex;
+  align-items: flex-start;
+  gap: 20px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 24px;
+  margin-top: 32px;
+  max-width: 560px;
+}
+.yz-captain-badge {
+  flex-shrink: 0;
+  width: 48px;
+  height: 48px;
+  background: var(--navy);
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  font-weight: 500;
+}
+.yz-captain-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+.yz-captain-sub {
+  font-size: 13px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.yz-included {
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  padding: 28px;
+}
+.yz-included-h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.yz-included-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.yz-included-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 14px;
+  color: var(--ink);
+}
+.yz-included-check {
+  flex-shrink: 0;
+  width: 16px; height: 16px;
+  border: 1px solid var(--navy);
+  color: var(--navy);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.yz-included-note {
+  font-size: 12px;
+  color: var(--ink-muted);
+  line-height: 1.5;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule);
+}
+
+/* ── FINAL CTA navy band ── */
+.yz-final {
+  background: var(--navy);
+  color: var(--white);
+  padding: 72px 48px;
+}
+.yz-final-grid {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 48px;
+  max-width: 1280px;
+  margin: 0 auto;
+  align-items: end;
+}
+.yz-final-h2 {
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.8px;
+  margin: 0 0 18px;
+}
+.yz-final-sub {
+  font-size: 15px;
+  color: rgba(255,255,255,0.7);
+  line-height: 1.5;
+  max-width: 540px;
+  margin-bottom: 22px;
+}
+.yz-final-meta {
+  font-size: 13px;
+  color: rgba(255,255,255,0.7);
+  letter-spacing: 0.1px;
+}
+#yz-yp .yz-final-meta a { color: rgba(255,255,255,0.7); border-bottom: 1px solid rgba(255,255,255,0.3); padding-bottom: 1px; }
+#yz-yp .yz-final-meta a:hover { color: var(--white); border-color: rgba(255,255,255,0.7); }
+.yz-final-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── loader ── */
+.yz-loader {
+  text-align: center;
+  padding: 120px 24px;
+  color: var(--ink-muted);
+  font-size: 15px;
+}
+
+/* ── lightbox (sharp corners) ── */
+#yz-lb {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  background: rgba(8,28,50,0.96);
+  align-items: center;
+  justify-content: center;
+}
+#yz-lb.open { display: flex; }
+#yz-lb-img-wrap {
+  max-width: calc(100vw - 140px);
+  max-height: calc(100vh - 80px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#yz-lb-img {
+  max-width: 100%;
+  max-height: calc(100vh - 80px);
+  object-fit: contain;
+  border-radius: 0;
+  user-select: none;
+  display: block;
+}
+#yz-lb-close {
+  position: absolute;
+  top: 20px; right: 20px;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff;
+  width: 44px; height: 44px;
+  border-radius: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s;
+}
+#yz-lb-close:hover { background: rgba(255,255,255,0.18); }
+#yz-lb-prev, #yz-lb-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  color: #fff;
+  width: 52px; height: 52px;
+  border-radius: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.18s;
+}
+#yz-lb-prev { left: 16px; }
+#yz-lb-next { right: 16px; }
+#yz-lb-prev:hover, #yz-lb-next:hover { background: rgba(255,255,255,0.18); }
+#yz-lb-counter {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255,255,255,0.6);
+  font-size: 13px;
+  letter-spacing: 0.4px;
+}
+
+/* ── MOBILE ── */
+@media (max-width: 960px) {
+  /* 116px = 96px nav + 20px content. Без этого breadcrumb попадает
+     в зону fixed-шапки и тапы перехватывает logo → редирект на главную. */
+  .yz-hero { padding: 116px 20px 28px; }
+  .yz-breadcrumb { margin-bottom: 16px; }
+  .yz-title-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+  .yz-h1 { font-size: 36px; letter-spacing: -1px; }
+  .yz-subline { font-size: 14px; }
+  .yz-title-right {
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .yz-price-value { font-size: 26px; }
+  .yz-pa { gap: 14px; }
+  .yz-pa-total { font-size: 16px; }
+  .yz-pa-h, .yz-pa-rate { font-size: 9px; }
+  .yz-btn { padding: 12px 18px; font-size: 12px; }
+
+  .yz-gal {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 220px 90px;
+    height: auto;
+    gap: 6px;
+  }
+  .yz-gal-tall { grid-column: span 2; grid-row: auto; }
+  .yz-gal-cell-4, .yz-gal-cell-5 { display: none; }
+  .yz-gal-more { padding: 12px; }
+  .yz-gal-more-label { font-size: 14px; }
+  .yz-gal-more-sub { font-size: 11px; }
+
+  .yz-specs { padding: 40px 20px; }
+  .yz-specs-head { margin-bottom: 20px; }
+  .yz-specs-grid { grid-template-columns: repeat(2, 1fr); }
+  .yz-spec { padding: 16px 18px; }
+  .yz-spec-value { font-size: 15px; }
+
+  .yz-content { padding: 40px 20px; }
+  .yz-content-grid { grid-template-columns: 1fr; gap: 32px; }
+  .yz-captain { padding: 18px; gap: 14px; max-width: none; }
+  .yz-captain-badge { width: 40px; height: 40px; font-size: 16px; }
+
+  .yz-final { padding: 48px 20px; }
+  .yz-final-grid { grid-template-columns: 1fr; gap: 28px; }
+  .yz-final-h2 { font-size: 26px; letter-spacing: -0.6px; }
+  .yz-final-sub { font-size: 14px; }
+
+  #yz-lb-img-wrap { max-width: calc(100vw - 80px); }
+  #yz-lb-prev { left: 8px; }
+  #yz-lb-next { right: 8px; }
+}
+
+@media (max-width: 480px) {
+  .yz-h1 { font-size: 32px; }
+  .yz-final-h2 { font-size: 22px; }
+  .yz-title-right { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .yz-btn { width: 100%; }
+  /* price-anchor — оставляем 3 колонки, выравниваем по левому краю,
+     уменьшаем шрифт и gap чтобы влезло в узкий экран */
+  .yz-price-slot { width: 100%; }
+  .yz-pa { gap: 12px; justify-content: flex-start; }
+  .yz-pa-card { align-items: flex-start; text-align: left; }
+  .yz-pa-card.is-popular::after { left: 0; transform: none; }
+}
+</style>
+
+<script>
+(function () {
+  /* ── config ── */
+  /* Источники переехали из Google Sheets в Profbroker/y-az-publish (jsDelivr CDN).
+     После правки CSV в репо: purge edge через https://purge.jsdelivr.net/
+     Кэш-бастер &_=Date.now() убран — для jsDelivr не нужен (cache:no-store обходит
+     браузерный кэш, edge кэш сбрасывается purge'ем). */
+  var CSV_URL          = 'https://cdn.jsdelivr.net/gh/Profbroker/y-az-publish@main/catalog/data/yachts.csv';
+  var PRICES_CSV_URL   = 'https://cdn.jsdelivr.net/gh/Profbroker/y-az-publish@main/catalog/data/prices.csv';
+  var SETTINGS_CSV_URL = 'https://cdn.jsdelivr.net/gh/Profbroker/y-az-publish@main/catalog/data/settings.csv';
+  /* Fallback если Settings не подгрузился — Каспий, май-сентябрь */
+  var SEASON_FB = { high_start: '01.05', high_end: '30.09' };
+  var WA_NUMBER = '994502350235';
+  var PHONE_DISPLAY = '+994 50 235 02 35';
+  var WORK_HOURS = '09:00 — 22:00';
+
+  /* ── lang & slug ── */
+  var path = window.location.pathname;
+  var lang = /\/en(\/|$)/.test(path) ? 'en' : /\/ru(\/|$)/.test(path) ? 'ru' : 'az';
+  var slug = path.replace(/\/$/, '').split('/').pop();
+
+  /* ── translations (RU complete; EN/AZ — best-effort, polish later) ── */
+  var T = {
+    ru: {
+      bc_root:       'Яхты',
+      bc_sail:       'Парусные',
+      bc_motor:      'Моторные',
+      from:          'от',
+      per_hour:      '₼ / час',
+      pa_h_one:      'час',
+      pa_h_few:      'часа',
+      pa_h_many:     'часов',
+      pa_full_day:   'Полный день',
+      pa_rate_unit:  '₼/ч',
+      pa_currency:   '₼',
+      pa_eyebrow:    'Часто выбирают:',
+      book:          'Забронировать',
+      calc:          'Рассчитать цену',
+      wa:            'Написать в WhatsApp',
+      specs:         'Характеристики',
+      lbl_type:      'Тип',
+      lbl_length:    'Длина',
+      lbl_beam:      'Ширина',
+      lbl_guests:    'Гости',
+      lbl_cabins:    'Каюты',
+      lbl_shower:    'Душ',
+      lbl_toilet:    'Туалет',
+      lbl_platform:  'Купальная платформа',
+      lbl_speed:     'Скорость',
+      lbl_yard:      'Верфь',
+      lbl_engine:    'Двигатель',
+      lbl_marina:    'Стоянка',
+      yes:           'Есть',
+      no:            'Нет',
+      dash:          '—',
+      desc_h2:       'О яхте',
+      captain_t:     'Экипаж: капитан и матрос',
+      captain_s:     '10+ лет на Каспии. Говорим на русском, английском, азербайджанском.',
+      included_h3:   'Включено в стоимость',
+      included_items:['Экипаж', 'Топливо', 'Питьевая вода'],
+      included_note: 'Яхта оборудована всем необходимым для выхода в море, включая спасательное снаряжение по стандартам безопасности.',
+      gal_more:      'Ещё фото',
+      gal_more_sub:  'Открыть галерею →',
+      final_h2_pre:  'Забронируйте',
+      final_h2_post: 'прямо сейчас',
+      final_sub:     'Отвечаем в WhatsApp в течение пяти минут. Можно забронировать на завтра, выходные или сразу на сезон.',
+      loading:       'Загрузка...',
+      not_found:     'Яхта не найдена.',
+      wa_msg:        'Здравствуйте! Хочу узнать подробнее о яхте '
+    },
+    en: {
+      bc_root:       'Yachts',
+      bc_sail:       'Sailing',
+      bc_motor:      'Motor',
+      from:          'from',
+      per_hour:      '₼ / hour',
+      pa_h_one:      'hour',
+      pa_h_few:      'hours',
+      pa_h_many:     'hours',
+      pa_full_day:   'Full day',
+      pa_rate_unit:  '₼/h',
+      pa_currency:   '₼',
+      pa_eyebrow:    'Popular choices:',
+      book:          'Book Now',
+      calc:          'Calculate price',
+      wa:            'Message on WhatsApp',
+      specs:         'Specifications',
+      lbl_type:      'Type',
+      lbl_length:    'Length',
+      lbl_beam:      'Beam',
+      lbl_guests:    'Guests',
+      lbl_cabins:    'Cabins',
+      lbl_shower:    'Shower',
+      lbl_toilet:    'Toilet',
+      lbl_platform:  'Swim platform',
+      lbl_speed:     'Cruising speed',
+      lbl_yard:      'Builder',
+      lbl_engine:    'Engine',
+      lbl_marina:    'Marina',
+      yes:           'Yes',
+      no:            'No',
+      dash:          '—',
+      desc_h2:       'About the yacht',
+      captain_t:     'Crew: captain and deckhand',
+      captain_s:     '10+ years on the Caspian. We speak Russian, English, Azerbaijani.',
+      included_h3:   'Included',
+      included_items:['Crew', 'Fuel', 'Drinking water'],
+      included_note: 'The yacht is fully equipped for sea outings, including safety gear that meets all required standards.',
+      gal_more:      'More photos',
+      gal_more_sub:  'Open gallery →',
+      final_h2_pre:  'Book',
+      final_h2_post: 'right now',
+      final_sub:     'We reply on WhatsApp within five minutes. Book for tomorrow, the weekend, or the whole season.',
+      loading:       'Loading...',
+      not_found:     'Yacht not found.',
+      wa_msg:        'Hello! I would like to learn more about the yacht '
+    },
+    az: {
+      bc_root:       'Yaxtalar',
+      bc_sail:       'Yelkənli',
+      bc_motor:      'Motorlu',
+      from:          '-dan',
+      per_hour:      '₼ / saat',
+      pa_h_one:      'saat',
+      pa_h_few:      'saat',
+      pa_h_many:     'saat',
+      pa_full_day:   'Tam gün',
+      pa_rate_unit:  '₼/saat',
+      pa_currency:   '₼',
+      pa_eyebrow:    'Populyar seçimlər:',
+      book:          'Sifariş et',
+      calc:          'Qiyməti hesabla',
+      wa:            'WhatsApp-a yaz',
+      specs:         'Xüsusiyyətlər',
+      lbl_type:      'Növ',
+      lbl_length:    'Uzunluq',
+      lbl_beam:      'En',
+      lbl_guests:    'Qonaqlar',
+      lbl_cabins:    'Kajütlər',
+      lbl_shower:    'Duş',
+      lbl_toilet:    'Tualet',
+      lbl_platform:  'Üzmə platforması',
+      lbl_speed:     'Sürət',
+      lbl_yard:      'Tərsanə',
+      lbl_engine:    'Mühərrik',
+      lbl_marina:    'Dayanacaq',
+      yes:           'Var',
+      no:            'Yox',
+      dash:          '—',
+      desc_h2:       'Yaxta haqqında',
+      captain_t:     'Heyət: kapitan və matros',
+      captain_s:     'Xəzərdə 10+ il təcrübə. Rus, ingilis, Azərbaycan dillərində danışırıq.',
+      included_h3:   'Qiymətə daxildir',
+      included_items:['Heyət', 'Yanacaq', 'İçməli su'],
+      included_note: 'Yaxta dənizə çıxış üçün lazım olan hər şeylə təchiz edilib — o cümlədən təhlükəsizlik standartlarına uyğun xilasetmə vasitələri.',
+      gal_more:      'Daha çox foto',
+      gal_more_sub:  'Qalereyanı aç →',
+      final_h2_pre:  'Sifariş edin:',
+      final_h2_post: 'indi',
+      final_sub:     'WhatsApp-da beş dəqiqə ərzində cavab veririk. Sabah, həftə sonu və ya bütün mövsüm üçün sifariş edə bilərsiniz.',
+      loading:       'Yüklənir...',
+      not_found:     'Yaxta tapılmadı.',
+      wa_msg:        'Salam! Yaxta haqqında daha çox məlumat almaq istəyirəm: '
+    }
+  };
+  var t = T[lang];
+
+  var root = document.getElementById('yz-yp');
+  root.innerHTML = '<div class="yz-loader">' + t.loading + '</div>';
+
+  /* ── CSV parser ── */
+  function parseCSV(text) {
+    var lines = text.split(/\r?\n/);
+    var headers = parseLine(lines[0]);
+    var rows = [];
+    for (var i = 1; i < lines.length; i++) {
+      if (!lines[i].trim()) continue;
+      var vals = parseLine(lines[i]);
+      var obj = {};
+      headers.forEach(function (h, j) { obj[h.trim()] = (vals[j] || '').trim(); });
+      rows.push(obj);
+    }
+    return rows;
+  }
+  function parseLine(line) {
+    var result = [], cur = '', q = false;
+    for (var i = 0; i < line.length; i++) {
+      var c = line[i];
+      if (c === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+      else if (c === '"') { q = !q; }
+      else if (c === ',' && !q) { result.push(cur); cur = ''; }
+      else { cur += c; }
+    }
+    result.push(cur);
+    return result;
+  }
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function isYes(v) {
+    v = String(v || '').toLowerCase().trim();
+    return v === 'да' || v === 'yes' || v === 'var' || v === '1' || v === 'true';
+  }
+  function isNo(v) {
+    v = String(v || '').toLowerCase().trim();
+    return v === 'нет' || v === 'no' || v === 'yox' || v === '0' || v === 'false';
+  }
+  function ynOrDash(v) {
+    if (!v) return t.dash;
+    if (isYes(v)) return t.yes;
+    if (isNo(v))  return t.no;
+    return v;
+  }
+
+  /* ── icons ── */
+  var IC = {
+    check: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+    zoom:  '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>'
+  };
+
+  /* ── lightbox state ── */
+  var lbPhotos = [];
+  var lbIndex  = 0;
+  var lb       = document.getElementById('yz-lb');
+  var lbImg    = document.getElementById('yz-lb-img');
+  var lbCnt    = document.getElementById('yz-lb-counter');
+
+  function openLb(idx) {
+    if (!lbPhotos.length) return;
+    lbIndex = idx;
+    showLbPhoto();
+    lb.classList.add('open');
+    document.body.style.overflow = 'hidden';
+  }
+  function closeLb() {
+    lb.classList.remove('open');
+    document.body.style.overflow = '';
+  }
+  function showLbPhoto() {
+    lbImg.src = lbPhotos[lbIndex];
+    lbCnt.textContent = (lbIndex + 1) + ' / ' + lbPhotos.length;
+  }
+  function prevLb() { lbIndex = (lbIndex - 1 + lbPhotos.length) % lbPhotos.length; showLbPhoto(); }
+  function nextLb() { lbIndex = (lbIndex + 1) % lbPhotos.length; showLbPhoto(); }
+
+  document.getElementById('yz-lb-close').addEventListener('click', closeLb);
+  document.getElementById('yz-lb-prev').addEventListener('click', prevLb);
+  document.getElementById('yz-lb-next').addEventListener('click', nextLb);
+  lb.addEventListener('click', function (e) { if (e.target === lb) closeLb(); });
+  document.addEventListener('keydown', function (e) {
+    if (!lb.classList.contains('open')) return;
+    if (e.key === 'ArrowLeft')  prevLb();
+    if (e.key === 'ArrowRight') nextLb();
+    if (e.key === 'Escape')     closeLb();
+  });
+  var touchX = 0;
+  lb.addEventListener('touchstart', function (e) { touchX = e.touches[0].clientX; }, { passive: true });
+  lb.addEventListener('touchend', function (e) {
+    var dx = e.changedTouches[0].clientX - touchX;
+    if (Math.abs(dx) > 50) { dx > 0 ? prevLb() : nextLb(); }
+  });
+
+  /* ── breadcrumb: список всех активных яхт ──
+     Заменили старую категорию (Моторные/Парусные) на навигатор по
+     флоту. Для каждой активной яхты — ссылка в новой вкладке. Текущая
+     яхта без ссылки, жирная. URL берём из колонок url_ru/url_en/url_az,
+     fallback на /{lang}/{slug}. Автоматически подхватывает новые яхты
+     при добавлении в Google Sheets. */
+  function buildFleetList(allYachts, currentSlug) {
+    var slugLower = String(currentSlug || '').toLowerCase();
+    var items = [];
+    for (var i = 0; i < allYachts.length; i++) {
+      var y = allYachts[i];
+      if (y.active !== 'yes') continue;
+      var name = esc(y.name || '');
+      var ySlug = String(y.slug || '').toLowerCase();
+      var isCurrent = ySlug === slugLower;
+      if (isCurrent) {
+        items.push('<span class="yz-bc-yacht yz-bc-current">' + name + '</span>');
+      } else {
+        var url = (y['url_' + lang] || ('/' + lang + '/' + ySlug)).trim();
+        items.push(
+          '<a class="yz-bc-yacht" href="' + esc(url) + '" target="_blank" rel="noopener">' +
+          name + '</a>'
+        );
+      }
+    }
+    return items.join('');
+  }
+
+  /* ── render ── */
+  function render(y, allYachts) {
+    var name      = esc(y.name || '');
+    var typeRaw   = y['type_' + lang] || y.type_ru || '';
+    var type      = esc(typeRaw);
+    var shipyard  = esc(y.shipyard || '');
+    var model     = esc(y.model || '');
+    var engine    = esc(y.engine || '');
+    var marina    = esc(y.marina || '');
+    var descFull  = esc(y['desc_full_' + lang] || y.desc_full_ru || '').replace(/\n/g, '<br>');
+    var photo     = (y.photo_main || '').trim();
+    lbPhotos = (photo ? [photo] : []).concat(
+      (y.photos || '').split('|').map(function (s) { return s.trim(); }).filter(Boolean)
+    );
+    var priceFrom = esc(y.price_from || '');
+
+    /* ── breadcrumb: «Яхты: Alora · Caspian · Amina · …» ── */
+    var fleetHtml = buildFleetList(allYachts || [], y.slug);
+    var breadcrumbHtml =
+      '<a class="yz-bc-root" href="/' + lang + '/yachts">' + t.bc_root + ':</a>' +
+      '<span class="yz-bc-fleet">' + fleetHtml + '</span>';
+
+    /* ── status pill + subline в одной строке (под H1) ── */
+    var pillHtml = type
+      ? '<span class="yz-status-pill">' +
+          '<span class="yz-pill-dot"></span>' +
+          '<span>' + type + '</span>' +
+        '</span>'
+      : '';
+    var sublineParts = [shipyard, model].filter(Boolean);
+    var sublineText = sublineParts.length ? '<span>' + sublineParts.join(' · ') + '</span>' : '';
+    var sublineHtml = (sublineText || pillHtml)
+      ? '<div class="yz-subline">' + sublineText + pillHtml + '</div>'
+      : '';
+
+    /* ── price + CTA (baseline-aligned)
+       Контейнер .yz-price-slot — placeholder. Сразу показывает «от X ₼ / час»
+       (текущий вид, не ломает страницу). После загрузки Prices CSV содержимое
+       подменяется на price-anchor блок (3 пресета). См. updatePricing() ниже. */
+    var priceHtml = priceFrom
+      ? '<div class="yz-price-slot">' +
+          '<div class="yz-price">' +
+            '<span class="yz-price-from">' + t.from + '</span>' +
+            '<span class="yz-price-value">' + priceFrom + ' ' + t.per_hour + '</span>' +
+          '</div>' +
+        '</div>'
+      : '';
+
+    /* ── gallery: tall + 3 thumbs + «Ещё фото» (placeholder в нижнем правом углу) ── */
+    var galleryHtml = '';
+    if (lbPhotos.length) {
+      function photoCell(cls, idx, label) {
+        var url = lbPhotos[idx];
+        if (!url) return '<div class="yz-gal-cell ' + cls + ' yz-gal-empty"></div>';
+        return '<div class="yz-gal-cell ' + cls + '" data-idx="' + idx + '">' +
+          '<img src="' + esc(url) + '" alt="' + name + ' ' + label + '" loading="lazy">' +
+        '</div>';
+      }
+      /* placeholder показываем когда грид заполнен (>=4 фото) — открывает полноэкранную галерею */
+      var showMore = lbPhotos.length >= 4;
+      var lastCell = showMore
+        ? '<div class="yz-gal-more yz-gal-cell-5" data-more="1">' +
+            '<div class="yz-gal-more-label">' + t.gal_more + '</div>' +
+            '<div class="yz-gal-more-sub">' + t.gal_more_sub + '</div>' +
+          '</div>'
+        : photoCell('yz-gal-cell-5', 4, '5');
+
+      galleryHtml =
+        '<div class="yz-gal">' +
+          photoCell('yz-gal-tall', 0, '1') +
+          photoCell('yz-gal-cell-2', 1, '2') +
+          photoCell('yz-gal-cell-3', 2, '3') +
+          photoCell('yz-gal-cell-4', 3, '4') +
+          lastCell +
+        '</div>';
+    }
+
+    /* ── 12-cell spec grid ── */
+    function specCell(label, value) {
+      return '<div class="yz-spec">' +
+        '<div class="yz-spec-label">' + esc(label) + '</div>' +
+        '<div class="yz-spec-value">' + esc(value || t.dash) + '</div>' +
+      '</div>';
+    }
+    var specsHtml =
+      specCell(t.lbl_type,     typeRaw) +
+      specCell(t.lbl_length,   y.length) +
+      specCell(t.lbl_beam,     y.beam) +
+      specCell(t.lbl_guests,   y.guests) +
+      specCell(t.lbl_cabins,   y.cabins) +
+      specCell(t.lbl_shower,   ynOrDash(y.shower)) +
+      specCell(t.lbl_toilet,   ynOrDash(y.toilet)) +
+      specCell(t.lbl_platform, ynOrDash(y.platform)) +
+      specCell(t.lbl_speed,    y.speed) +
+      specCell(t.lbl_yard,     y.shipyard) +
+      specCell(t.lbl_engine,   y.engine) +
+      specCell(t.lbl_marina,   y.marina);
+
+    /* ── included list ── */
+    var includedHtml = '';
+    (t.included_items || []).forEach(function (item) {
+      includedHtml +=
+        '<li>' +
+          '<span class="yz-included-check">' + IC.check + '</span>' +
+          '<span>' + esc(item) + '</span>' +
+        '</li>';
+    });
+
+    /* ── WhatsApp link ── */
+    var waUrl = 'https://wa.me/' + WA_NUMBER + '?text=' +
+      encodeURIComponent(t.wa_msg + (y.name || '') + '.');
+
+    /* ── final CTA H2 ── */
+    var finalH2 = t.final_h2_pre + ' ' + name + ' ' + t.final_h2_post;
+
+    /* ── compose ── */
+    var html =
+      /* hero: breadcrumb + title row + gallery */
+      '<section class="yz-hero">' +
+        '<div class="yz-breadcrumb">' + breadcrumbHtml + '</div>' +
+        '<div class="yz-title-row">' +
+          '<div class="yz-title-left">' +
+            /* единственный H1 страницы ставится отдельным Tilda-блоком (SEO) */
+            '<h2 class="yz-h1">' + name + '</h2>' +
+            sublineHtml +
+          '</div>' +
+          '<div class="yz-title-right">' +
+            priceHtml +
+            '<a class="yz-btn yz-btn-secondary" href="#popup:calc">' + t.calc + '</a>' +
+            '<a class="yz-btn yz-btn-primary" href="#popup:myform">' + t.book + '</a>' +
+          '</div>' +
+        '</div>' +
+        galleryHtml +
+      '</section>' +
+
+      /* specs */
+      '<section class="yz-specs">' +
+        '<div class="yz-sec-inner">' +
+          '<div class="yz-specs-head">' +
+            '<h2 class="yz-h2">' + t.specs + '</h2>' +
+          '</div>' +
+          '<div class="yz-specs-grid">' + specsHtml + '</div>' +
+        '</div>' +
+      '</section>' +
+
+      /* description + included */
+      '<section class="yz-content" id="description">' +
+        '<div class="yz-content-grid">' +
+          '<div>' +
+            '<h2 class="yz-h2 yz-desc-h2">' + t.desc_h2 + '</h2>' +
+            (descFull ? '<div class="yz-desc-text"><p>' + descFull + '</p></div>' : '') +
+            '<div class="yz-captain">' +
+              '<div class="yz-captain-badge">i</div>' +
+              '<div>' +
+                '<div class="yz-captain-title">' + t.captain_t + '</div>' +
+                '<div class="yz-captain-sub">' + t.captain_s + '</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<aside class="yz-included">' +
+            '<h3 class="yz-included-h3">' + t.included_h3 + '</h3>' +
+            '<ul class="yz-included-list">' + includedHtml + '</ul>' +
+            '<div class="yz-included-note">' + t.included_note + '</div>' +
+          '</aside>' +
+        '</div>' +
+      '</section>' +
+
+      /* final CTA */
+      '<section class="yz-final">' +
+        '<div class="yz-final-grid">' +
+          '<div>' +
+            '<h2 class="yz-final-h2">' + finalH2 + '</h2>' +
+            '<div class="yz-final-sub">' + t.final_sub + '</div>' +
+            '<div class="yz-final-meta">' +
+              '<a href="tel:+' + WA_NUMBER + '">' + PHONE_DISPLAY + '</a>' +
+              ' · ' + WORK_HOURS +
+              (marina ? ' · ' + marina : '') +
+            '</div>' +
+          '</div>' +
+          '<div class="yz-final-actions">' +
+            '<a class="yz-btn yz-btn-inverted" href="#popup:myform">' + t.book + '</a>' +
+            '<a class="yz-btn yz-btn-ghost" href="' + waUrl + '" target="_blank" rel="noopener">' + t.wa + '</a>' +
+          '</div>' +
+        '</div>' +
+      '</section>';
+
+    root.innerHTML = html;
+
+    /* gallery clicks */
+    root.querySelectorAll('.yz-gal-cell').forEach(function (el) {
+      el.addEventListener('click', function () { openLb(+el.dataset.idx); });
+    });
+    root.querySelectorAll('.yz-gal-more').forEach(function (el) {
+      /* открываем с первого фото, которого нет в гриде (idx 4); если их нет — с начала */
+      el.addEventListener('click', function () { openLb(lbPhotos.length > 4 ? 4 : 0); });
+    });
+  }
+
+  /* ── price-anchor: pluralization helper (RU «1 час / 2 часа / 5 часов») ── */
+  function hourLabel(n) {
+    n = Math.abs(+n);
+    var nMod10 = n % 10, nMod100 = n % 100;
+    if (nMod10 === 1 && nMod100 !== 11) return t.pa_h_one;
+    if (nMod10 >= 2 && nMod10 <= 4 && (nMod100 < 12 || nMod100 > 14)) return t.pa_h_few;
+    return t.pa_h_many;
+  }
+
+  /* Форматирование целого числа с тонким пробелом (1 100, 1 900). */
+  function fmtN(n) {
+    return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+
+  /* ── price-anchor: сборка HTML из 3 пресетов
+     items = [{h: 1, total: 500}, {h: 3, total: 1100, popular: true}, {h: 6, total: 1900}] */
+  function buildPriceAnchorHtml(items) {
+    var html = '<div class="yz-price-slot">' +
+      '<div class="yz-pa">' +
+      '<div class="yz-pa-eyebrow">' + t.pa_eyebrow + '</div>';
+    items.forEach(function (it) {
+      var label = it.h + ' ' + hourLabel(it.h);
+      var rate  = (it.total / it.h);
+      var cls   = 'yz-pa-card' + (it.popular ? ' is-popular' : '');
+      html +=
+        '<div class="' + cls + '">' +
+          '<div class="yz-pa-h">' + label + '</div>' +
+          '<div class="yz-pa-total">' + fmtN(it.total) + ' ' + t.pa_currency + '</div>' +
+          '<div class="yz-pa-rate">' + fmtN(rate) + ' ' + t.pa_rate_unit + '</div>' +
+        '</div>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
+  /* ── price-anchor: определение текущего сезона по дате
+     Берём диапазон high из Settings ('DD.MM' формат). Если в диапазоне → 'high',
+     иначе → 'low'. Ровно та же логика что в калькуляторе (tilda-calc-block.html). */
+  function detectSeason(settings) {
+    var hs = (settings.season_high_start || SEASON_FB.high_start).split('.');
+    var he = (settings.season_high_end   || SEASON_FB.high_end  ).split('.');
+    var startD = +hs[0] || 1, startM = +hs[1] || 5;
+    var endD   = +he[0] || 30, endM  = +he[1] || 9;
+    var today = new Date(), mo = today.getMonth() + 1, da = today.getDate();
+    var afterStart = (mo > startM) || (mo === startM && da >= startD);
+    var beforeEnd  = (mo < endM)   || (mo === endM   && da <= endD);
+    return (afterStart && beforeEnd) ? 'high' : 'low';
+  }
+
+  /* Парсит Settings CSV. Берёт ПЕРВЫЕ ДВЕ колонки по позиции независимо
+     от языка заголовка (в Sheets может быть «ключ/значение» или «key/value»). */
+  function parseSettings(text) {
+    var rows = parseCSV(text), s = {};
+    rows.forEach(function (r) {
+      var keys = Object.keys(r);
+      if (keys.length < 2) return;
+      var k = (r[keys[0]] || '').trim();
+      var v = (r[keys[1]] || '').trim();
+      if (k) s[k] = v;
+    });
+    return s;
+  }
+
+  /* ── price-anchor: загружаем Prices + Settings параллельно и подменяем .yz-price-slot
+     Тихо завершаемся при любой ошибке — fallback остаётся на старый «от X ₼/час». */
+  function updatePricing(yacht) {
+    var lo  = +yacht.pa_low_h  || 0;
+    var mid = +yacht.pa_mid_h  || 0;
+    var hi  = +yacht.pa_high_h || 0;
+    /* Если в Sheets не заполнены пресеты — не лезем в Prices, оставляем placeholder. */
+    if (!lo || !mid || !hi) return;
+
+    /* Settings грузим best-effort: если упал — продолжаем с fallback датами. */
+    var pricesP   = fetch(PRICES_CSV_URL  , { cache: 'no-store' }).then(function (r) { return r.text(); });
+    var settingsP = fetch(SETTINGS_CSV_URL, { cache: 'no-store' })
+                      .then(function (r) { return r.text(); })
+                      .catch(function () { return ''; });
+
+    Promise.all([pricesP, settingsP])
+      .then(function (results) {
+        var rows     = parseCSV(results[0]);
+        var settings = results[1] ? parseSettings(results[1]) : {};
+        var curSeason = detectSeason(settings);
+
+        var slugLower = String(yacht.slug || slug || '').toLowerCase();
+
+        /* Приоритет: текущий сезон → any → другой сезон.
+           Так в межсезонье берём low-цены (если они заполнены), летом — high. */
+        var prio = {};
+        prio[curSeason]  = 1;
+        prio['any']      = 2;
+        prio['']         = 2;
+        prio[curSeason === 'high' ? 'low' : 'high'] = 3;
+
+        var picked = null;
+        for (var i = 0; i < rows.length; i++) {
+          var r = rows[i];
+          if (String(r.slug || '').toLowerCase() !== slugLower) continue;
+          var rSeason = (r.season || 'any').toLowerCase();
+          if (!picked || (prio[rSeason] < prio[(picked.season || 'any').toLowerCase()])) {
+            picked = r;
+          }
+        }
+        if (!picked) return;
+
+        /* h1..h9 в Prices CSV — это РЕЙТЫ ОТДЕЛЬНЫХ ЧАСОВ:
+              h1 — рейт 1-го часа, h2 — рейт 2-го часа, ...
+           Total за N часов = сумма h1..hN + fee.
+           Например h1=250, h2=200 → 2ч стоят 250+200+fee, не 200×2+fee. */
+        var fee = +picked['fee'] || 0;
+        function calcTotal(hours) {
+          var sum = 0;
+          for (var i = 1; i <= hours; i++) {
+            var r = +picked['h' + i];
+            if (!r) return 0;  // если рейт какого-то часа отсутствует — пропускаем пресет
+            sum += r;
+          }
+          return sum + fee;
+        }
+        var totLo  = calcTotal(lo);
+        var totMid = calcTotal(mid);
+        var totHi  = calcTotal(hi);
+        if (!totLo || !totMid || !totHi) return;
+
+        var items = [
+          { h: lo,  total: totLo  },
+          { h: mid, total: totMid, popular: true },
+          { h: hi,  total: totHi  }
+        ];
+        /* Сортировка по часам (1 → 6), независимо от того как названы
+           колонки в Sheets. Все карточки показывают «N часов». */
+        items.sort(function (a, b) { return a.h - b.h; });
+
+        var slot = document.querySelector('#yz-yp .yz-price-slot');
+        if (slot) slot.outerHTML = buildPriceAnchorHtml(items);
+      })
+      .catch(function () { /* тихий fallback — оставляем «от X ₼/час» */ });
+  }
+
+  /* ── fetch & find yacht by slug (cache-buster чтобы Google CDN не отдавал прошлое) ── */
+  fetch(CSV_URL, { cache: 'no-store' })
+    .then(function (r) { return r.text(); })
+    .then(function (text) {
+      var yachts = parseCSV(text);
+      var yacht = null;
+      /* slug сравнение case-insensitive — slug в Sheets может быть с большой
+         буквы (Alora) а URL обычно lowercase (/ru/yachts/alora). */
+      var slugLower = String(slug || '').toLowerCase();
+      for (var i = 0; i < yachts.length; i++) {
+        if (String(yachts[i].slug || '').toLowerCase() === slugLower &&
+            yachts[i].active === 'yes') { yacht = yachts[i]; break; }
+      }
+      if (yacht) {
+        render(yacht, yachts);
+        /* После рендера — асинхронно подменяем «от X ₼/час» на 3-карточный
+           price-anchor. Если данных нет / API упал — placeholder остаётся. */
+        updatePricing(yacht);
+      } else {
+        root.innerHTML = '<div class="yz-loader">' + t.not_found + '</div>';
+      }
+    })
+    .catch(function () {
+      root.innerHTML = '<div class="yz-loader">' + t.not_found + '</div>';
+    });
+})();
+</script>

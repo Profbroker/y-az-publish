@@ -1,0 +1,68 @@
+<!--
+  yacht-page-loader.html
+
+  Loader для страниц отдельной яхты: /ru/yachts/<slug>, /en/yachts/<slug>, /az/yachts/<slug>.
+
+  Тянет полный шаблон yacht-page.html из Profbroker/y-az-publish (jsDelivr CDN).
+  Шаблон сам читает URL, понимает slug и язык, фетчит данные из catalog/data/*.csv,
+  рендерит страницу яхты.
+
+  Размещение в Tilda:
+    На каждой странице яхты — один T123 (Full Width) с этим кодом.
+    Никаких других блоков от старой реализации не нужно — этот блок самодостаточен.
+
+  После правки yacht-page.html в репо — purge:
+    curl -X POST https://purge.jsdelivr.net/ -H "Content-Type: application/json" \
+      -d '{"path":["/gh/Profbroker/y-az-publish@main/catalog/blocks/yacht-page.html"]}'
+-->
+
+<div id="yp-mount" style="min-height:600px;">
+  <div style="text-align:center;padding:120px 24px;color:#7A8294;font:14px Inter,sans-serif">
+    Загрузка…
+  </div>
+</div>
+
+<script>
+(function () {
+  var CDN_URL = 'https://cdn.jsdelivr.net/gh/Profbroker/y-az-publish@main/catalog/blocks/yacht-page.html';
+  var TIMEOUT = 6000;
+  var path    = window.location.pathname;
+  var lang    = /\/en(\/|$)/.test(path) ? 'en'
+              : /\/az(\/|$)/.test(path) ? 'az' : 'ru';
+  var FALLBACK = '/' + lang + '/yachts';
+
+  var mount = document.getElementById('yp-mount');
+  if (!mount) return;
+
+  var ctrl  = new AbortController();
+  var timer = setTimeout(function () { ctrl.abort(); }, TIMEOUT);
+
+  fetch(CDN_URL, { signal: ctrl.signal, cache: 'no-store' })
+    .then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(function (html) {
+      mount.innerHTML = html;
+      mount.querySelectorAll('script').forEach(function (old) {
+        var s = document.createElement('script');
+        for (var i = 0; i < old.attributes.length; i++) {
+          s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+        }
+        s.textContent = old.textContent;
+        old.parentNode.replaceChild(s, old);
+      });
+    })
+    .catch(function (err) {
+      console.error('[yacht-page] loader failed:', err);
+      mount.innerHTML =
+        '<div style="text-align:center;padding:80px 24px;font:14px Inter,sans-serif">' +
+          '<p style="color:#0E1726;margin:0 0 12px">Не удалось загрузить страницу яхты.</p>' +
+          '<a href="' + FALLBACK + '" style="color:#0E375E;border-bottom:1px solid #0E375E;padding-bottom:1px;text-decoration:none">' +
+            'Вернуться к каталогу →' +
+          '</a>' +
+        '</div>';
+    });
+})();
+</script>

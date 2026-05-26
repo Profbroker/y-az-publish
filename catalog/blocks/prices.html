@@ -1,0 +1,329 @@
+<!-- yacht.az — /yachts — BLOCK 5: ЦЕНЫ НА ЯХТЫ
+     Данные из того же Google Sheets что и калькулятор.
+     Вставить в T123 на странице /ru/yachts, /en/yachts, /az/yachts
+     Язык определяется по URL: /ru/ → RU, /en/ → EN, /az/ → AZ -->
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;700&display=swap');
+
+#yp { background: #f8fafc; padding: 60px 24px; }
+#yp-i { max-width: 1100px; margin: 0 auto; }
+
+#yp-h2 {
+  font: 300 35px/1.2 Montserrat, Arial, sans-serif;
+  color: #236192;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+#yp-lead {
+  font: 300 14px/1.7 Montserrat, Arial, sans-serif;
+  color: #0d3351;
+  margin: 0 0 36px;
+}
+
+#yp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+}
+
+.yp-card {
+  background: #fff;
+  border: 1px solid #d4e3ee;
+  border-radius: 8px;
+  padding: 28px 28px 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.yp-name {
+  font: 600 18px/1.2 Montserrat, Arial, sans-serif;
+  color: #0d3351;
+  margin-bottom: 20px;
+}
+
+.yp-price-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+}
+
+.yp-seasons {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.yp-season-item {
+  flex: 1;
+  min-width: 100px;
+}
+.yp-slabel {
+  font: 300 11px/1 Montserrat, Arial, sans-serif;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+.yp-sprice {
+  font: 300 28px/1 Montserrat, Arial, sans-serif;
+  color: #236192;
+}
+.yp-sunit {
+  font: 300 13px/1 Montserrat, Arial, sans-serif;
+  color: #6b7280;
+  margin-left: 3px;
+}
+
+.yp-fixed-label {
+  font: 300 11px/1 Montserrat, Arial, sans-serif;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: .4px;
+  margin-bottom: 6px;
+}
+.yp-fixed-note {
+  font: 300 11px/1.4 Montserrat, Arial, sans-serif;
+  color: #9ca3af;
+  margin-top: 8px;
+  display: block;
+}
+
+.yp-card-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid #e9f0f6;
+}
+
+.yp-discount {
+  font: 300 11px/1.4 Montserrat, Arial, sans-serif;
+  color: #16a34a;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.yp-fee {
+  font: 300 12px/1 Montserrat, Arial, sans-serif;
+  color: #9ca3af;
+  margin-bottom: 20px;
+}
+
+.yp-link {
+  font: 300 13px/1 Montserrat, Arial, sans-serif;
+  color: #236192;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.yp-link:hover { text-decoration: underline; }
+
+#yp-loading {
+  text-align: center;
+  color: #9ca3af;
+  font: 300 14px/1 Montserrat, Arial, sans-serif;
+  padding: 20px 0;
+}
+
+@media (max-width: 768px) {
+  #yp { padding: 44px 20px; }
+  #yp-h2 { font-size: 26px; }
+  #yp-grid { grid-template-columns: 1fr; }
+}
+</style>
+
+<div id="yp">
+  <div id="yp-i">
+    <h2 id="yp-h2"></h2>
+    <p id="yp-lead"></p>
+    <div id="yp-loading"></div>
+    <div id="yp-grid"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+
+  var path = window.location.pathname;
+  var lang = /\/en(\/|$)/.test(path) ? 'en'
+           : /\/ru(\/|$)/.test(path) ? 'ru'
+           : 'az';
+  var lp = lang === 'en' ? '/en' : lang === 'az' ? '/az' : '/ru';
+
+  var T = {
+    ru: {
+      h2:      'Стоимость аренды',
+      lead:    'Актуальные цены на почасовую аренду яхт с экипажем в Бакинской бухте',
+      loading: 'Загружаем цены…',
+      high:    'Высокий сезон',
+      low:     'Низкий сезон',
+      fixed:   'Фиксированная цена',
+      fixed_note: '🗓 Цена не зависит от сезона',
+      per_h:    '₼/час',
+      fee:      '+ {fee} ₼ сервисный сбор',
+      link:     'Подробнее →',
+      from:     'от',
+      discount: '💡 Скидка от {n} часов'
+    },
+    en: {
+      h2:       'Rental Prices',
+      lead:     'Current hourly rates for crewed yacht charter in Baku Bay',
+      loading:  'Loading prices…',
+      high:     'High season',
+      low:      'Low season',
+      fixed:    'Fixed price',
+      fixed_note: '🗓 Price is not season-dependent',
+      per_h:    '₼/h',
+      fee:      '+ {fee} ₼ service fee',
+      link:     'More details →',
+      from:     'from',
+      discount: '💡 Discount from {n} hours'
+    },
+    az: {
+      h2:       'İcarə Qiymətləri',
+      lead:     'Bakı körfəzində ekipajla saatlıq yaxta icarəsinin aktual qiymətləri',
+      loading:  'Qiymətlər yüklənir…',
+      high:     'Yüksək mövsüm',
+      low:      'Aşağı mövsüm',
+      fixed:    'Sabit qiymət',
+      fixed_note: '🗓 Qiymət mövsümdən asılı deyil',
+      per_h:    '₼/saat',
+      fee:      '+ {fee} ₼ xidmət haqqı',
+      link:     'Ətraflı →',
+      from:     'dən',
+      discount: '💡 {n} saatdan endirim'
+    }
+  }[lang];
+
+  // ── Источник переехал из Google Sheets в Profbroker/y-az-publish (jsDelivr CDN)
+  var PRICES_URL = 'https://cdn.jsdelivr.net/gh/Profbroker/y-az-publish@main/catalog/data/prices.csv';
+
+  // ── Резервные данные (те же что в калькуляторе) ───────────────────────
+  var FALLBACK = [
+    {
+      id: 'alora', name: 'Alora', emoji: '⛵',
+      fee: 50, seasonal: true, discount_start: 5,
+      urls: { ru: '/ru/alora', en: '/en/alora', az: '/az/alora' },
+      rates: {
+        high: { 1: 250 },
+        low:  { 1: 200 }
+      }
+    }
+  ];
+
+  // ── CSV-парсер ────────────────────────────────────────────────────────
+  function parseCSV(text) {
+    var rows = [], lines = text.trim().split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var cols = [], cur = '', inQ = false;
+      for (var j = 0; j < lines[i].length; j++) {
+        var c = lines[i][j];
+        if (c === '"') { inQ = !inQ; }
+        else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+        else { cur += c; }
+      }
+      cols.push(cur.trim());
+      rows.push(cols);
+    }
+    return rows;
+  }
+
+  function buildYachts(rows) {
+    var headers = rows[0].map(function (h) {
+      return h.trim().toLowerCase().replace(/\s+/g, '_');
+    });
+    var idx = {};
+    headers.forEach(function (h, i) { idx[h] = i; });
+    var groups = {}, order = [];
+
+    for (var r = 1; r < rows.length; r++) {
+      var cols = rows[r];
+      if (!cols[idx.id] || !cols[idx.id].trim()) continue;
+      var id = cols[idx.id].trim();
+      if (!groups[id]) {
+        order.push(id);
+        groups[id] = {
+          id:       id,
+          name:     (cols[idx.name]  || id).trim(),
+          emoji:    (cols[idx.emoji] || '').trim(),
+          fee:      +(cols[idx.fee]  || 0),
+          seasonal:       (cols[idx.seasonal]        || '').trim().toLowerCase() === 'yes',
+          discount_start: +(cols[idx.discount_start] || 0),
+          urls: {
+            ru: (cols[idx.url_ru] || '').trim(),
+            en: (cols[idx.url_en] || '').trim(),
+            az: (cols[idx.url_az] || '').trim()
+          },
+          rates: {}
+        };
+      }
+      var season = (cols[idx.season] || 'any').trim().toLowerCase();
+      var rObj = {};
+      for (var h = 1; h <= 9; h++) {
+        var key = 'h' + h;
+        if (idx[key] !== undefined && cols[idx[key]] && +cols[idx[key]].trim() > 0) {
+          rObj[h] = +cols[idx[key]].trim();
+        }
+      }
+      groups[id].rates[season] = rObj;
+    }
+    return order.map(function (id) { return groups[id]; });
+  }
+
+  // ── Отрисовка карточек ────────────────────────────────────────────────
+  function render(yachts) {
+    var grid = document.getElementById('yp-grid');
+    document.getElementById('yp-loading').style.display = 'none';
+
+    grid.innerHTML = yachts.map(function (y) {
+      var url = y.urls[lang] || y.urls.ru || '';
+      var priceBlock = '';
+
+      if (y.seasonal) {
+        var highRate = (y.rates.high || {})[1] || 0;
+        var lowRate  = (y.rates.low  || {})[1] || 0;
+        priceBlock =
+          '<div class="yp-seasons">' +
+            (highRate ? '<div class="yp-season-item"><div class="yp-slabel">' + T.high + '</div>' +
+              '<div><span class="yp-sprice">' + T.from + ' ' + highRate + '</span>' +
+              '<span class="yp-sunit">' + T.per_h + '</span></div></div>' : '') +
+            (lowRate  ? '<div class="yp-season-item"><div class="yp-slabel">' + T.low + '</div>' +
+              '<div><span class="yp-sprice">' + T.from + ' ' + lowRate  + '</span>' +
+              '<span class="yp-sunit">' + T.per_h + '</span></div></div>' : '') +
+          '</div>';
+      } else {
+        var anyRate = (y.rates.any || y.rates.high || {})[1] || 0;
+        priceBlock =
+          '<div class="yp-fixed-label">' + T.fixed + '</div>' +
+          (anyRate ? '<div><span class="yp-sprice">' + T.from + ' ' + anyRate + '</span>' +
+            '<span class="yp-sunit">' + T.per_h + '</span></div>' : '') +
+          '<div class="yp-fixed-note">' + T.fixed_note + '</div>';
+      }
+
+      return '<div class="yp-card">' +
+        '<div class="yp-name">' + (y.emoji ? y.emoji + ' ' : '') + y.name + '</div>' +
+        '<div class="yp-price-wrap">' + priceBlock + '</div>' +
+        '<div class="yp-card-footer">' +
+          (y.discount_start > 1 ? '<div class="yp-discount">' + T.discount.replace('{n}', y.discount_start) + '</div>' : '') +
+          '<div class="yp-fee">' + T.fee.replace('{fee}', y.fee) + '</div>' +
+          (url ? '<a href="' + url + '" class="yp-link">' + T.link + '</a>' : '') +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  // ── Запуск ────────────────────────────────────────────────────────────
+  document.getElementById('yp-h2').textContent   = T.h2;
+  document.getElementById('yp-lead').textContent = T.lead;
+  document.getElementById('yp-loading').textContent = T.loading;
+
+  fetch(PRICES_URL)
+    .then(function (r) { if (!r.ok) throw new Error(); return r.text(); })
+    .then(function (csv) {
+      var built = buildYachts(parseCSV(csv));
+      render(built.length ? built : FALLBACK);
+    })
+    .catch(function () { render(FALLBACK); });
+
+})();
+</script>
