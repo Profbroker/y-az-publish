@@ -25,56 +25,27 @@ y-az-publish/
 
 ## Как добавить или изменить яхту
 
-1. Откройте `catalog/data/yachts.csv` в этом репо (через GitHub web или локально)
-2. Добавьте новую строку или измените существующую
-3. Commit + push в `main`
-4. Сбросьте edge-кэш jsDelivr:
-   ```bash
-   curl -X POST https://purge.jsdelivr.net/ -H "Content-Type: application/json" \
-     -d '{"path":["/gh/Profbroker/y-az-publish@main/catalog/data/yachts.csv"]}'
-   ```
-5. На сайте обновится через ~30 секунд
+**Полная пошаговая инструкция — [HOW-TO-ADD-YACHT.md](HOW-TO-ADD-YACHT.md)** (для добавления новой яхты).
 
-Если добавили новую яхту — создайте 3 страницы в Tilda (`/ru/yachts/<slug>`, `/en/yachts/<slug>`, `/az/yachts/<slug>`), в каждую вставьте T123 с loader'ом `yacht-page-loader.html` (см. подключение ниже).
+Если меняешь только данные существующей:
+1. Открыть `catalog/data/yachts.csv` или `catalog/data/prices.csv` через GitHub web (карандаш «Edit»)
+2. Поправить → Commit прямо в `main`
+3. Подождать ~1-2 минуты — CDN пропагирует
+4. В инкогнито проверить страницу яхты
 
-## Как изменить цену
+В Tilda ничего трогать не надо — master T123 на скрытой странице уже подключён ко всем.
 
-Откройте `catalog/data/prices.csv` → редактируйте → push → purge:
-```bash
-curl -X POST https://purge.jsdelivr.net/ -H "Content-Type: application/json" \
-  -d '{"path":["/gh/Profbroker/y-az-publish@main/catalog/data/prices.csv"]}'
-```
+## CDN
+
+Сейчас используем **`rawcdn.githack.com`** — мирроит GitHub, отдаёт свежак через ~1-2 минуты после push. Никаких purge-команд не нужно.
+
+Раньше пробовали jsDelivr — у них ref-cache залипает на старом SHA даже после `purge.jsdelivr.net`. Перешли на githack.
 
 ## Подключение в Tilda
 
-### Страница каталога /ru/yachts (и языковые варианты)
+На сайте — **master T123** с loader-кодом на скрытой странице, alias-блоки на реальных страницах яхт. Одна правка master → все 9 страниц обновляются.
 
-Один T123 Full Width на странице — содержимое из [`catalog/loaders/prices-loader.html`](catalog/loaders/prices-loader.html).
-
-### Страница отдельной яхты /ru/yachts/<slug>
-
-Один T123 Full Width на странице — содержимое из [`catalog/loaders/yacht-page-loader.html`](catalog/loaders/yacht-page-loader.html).
-
-Шаблон сам определит slug по URL и подтянет правильную яхту.
-
-## Кэш jsDelivr
-
-После любых правок в CSV или шаблонах — purge:
-
-```bash
-# Один файл
-curl -X POST https://purge.jsdelivr.net/ -H "Content-Type: application/json" \
-  -d '{"path":["/gh/Profbroker/y-az-publish@main/<path>"]}'
-
-# Несколько файлов сразу
-curl -X POST https://purge.jsdelivr.net/ -H "Content-Type: application/json" \
-  -d '{"path":[
-    "/gh/Profbroker/y-az-publish@main/catalog/data/yachts.csv",
-    "/gh/Profbroker/y-az-publish@main/catalog/data/prices.csv"
-  ]}'
-```
-
-Без purge edge-кэш висит до 12 часов (`s-maxage=43200`).
+Master содержит код из [`catalog/loaders/yacht-page-loader.html`](catalog/loaders/yacht-page-loader.html). Шаблон сам определит slug по URL и подтянет правильную яхту.
 
 ## Известный рассинхрон
 
