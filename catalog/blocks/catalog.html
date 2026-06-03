@@ -283,8 +283,8 @@
 .yz-card .yz-price-slot { width: 100%; margin-bottom: 14px; }
 .yz-pa { display: flex; align-items: flex-end; gap: 18px; }
 .yz-pa-eyebrow {
-  margin-left: auto; align-self: center;
-  max-width: 96px; text-align: right;
+  margin-right: auto; align-self: center;
+  max-width: 96px; text-align: left;
   font-size: 9px; font-weight: 500; letter-spacing: 1.2px; line-height: 1.35;
   text-transform: uppercase; color: var(--ink-muted);
 }
@@ -397,7 +397,8 @@
   }
   function fmtN(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
   function buildPriceAnchorHtml(items) {
-    var html = '<div class="yz-price-slot"><div class="yz-pa">';
+    var html = '<div class="yz-price-slot"><div class="yz-pa">' +
+               '<div class="yz-pa-eyebrow">' + t.pa_eyebrow + '</div>';
     items.forEach(function (it) {
       html += '<div class="yz-pa-card' + (it.popular ? ' is-popular' : '') + '">' +
                 '<div class="yz-pa-h">' + it.h + ' ' + hourLabel(it.h) + '</div>' +
@@ -405,7 +406,6 @@
                 '<div class="yz-pa-rate">' + fmtN(it.total / it.h) + ' ' + t.pa_rate_unit + '</div>' +
               '</div>';
     });
-    html += '<div class="yz-pa-eyebrow">' + t.pa_eyebrow + '</div>';
     return html + '</div></div>';
   }
   function detectSeason(s) {
