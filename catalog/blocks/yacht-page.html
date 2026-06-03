@@ -1274,8 +1274,8 @@
     if (!lo || !mid || !hi) return;
 
     /* Settings грузим best-effort: если упал — продолжаем с fallback датами. */
-    var pricesP   = fetch(PRICES_CSV_URL  , { cache: 'no-store' }).then(function (r) { return r.text(); });
-    var settingsP = fetch(SETTINGS_CSV_URL, { cache: 'no-store' })
+    var pricesP   = fetch(PRICES_CSV_URL + '?_=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); });
+    var settingsP = fetch(SETTINGS_CSV_URL + '?_=' + Date.now(), { cache: 'no-store' })
                       .then(function (r) { return r.text(); })
                       .catch(function () { return ''; });
 
@@ -1341,7 +1341,7 @@
   }
 
   /* ── fetch & find yacht by slug (cache-buster чтобы Google CDN не отдавал прошлое) ── */
-  fetch(CSV_URL, { cache: 'no-store' })
+  fetch(CSV_URL + '?_=' + Date.now(), { cache: 'no-store' })
     .then(function (r) { return r.text(); })
     .then(function (text) {
       var yachts = parseCSV(text);

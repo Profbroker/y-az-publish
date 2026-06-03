@@ -317,7 +317,7 @@
   document.getElementById('yp-lead').textContent = T.lead;
   document.getElementById('yp-loading').textContent = T.loading;
 
-  fetch(PRICES_URL)
+  fetch(PRICES_URL + '?_=' + Date.now())
     .then(function (r) { if (!r.ok) throw new Error(); return r.text(); })
     .then(function (csv) {
       var built = buildYachts(parseCSV(csv));
