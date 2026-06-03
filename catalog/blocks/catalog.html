@@ -278,11 +278,36 @@
   color: var(--ink-muted);
   font-size: 14px;
 }
+
+/* ── price-anchor: 3 пресета в карточке (паттерн со страницы яхты, компактно) ── */
+.yz-card .yz-price-slot { width: 100%; }
+.yz-pa { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.yz-pa-eyebrow {
+  width: 100%; margin-bottom: 4px;
+  font-size: 9px; font-weight: 500; letter-spacing: 1.2px;
+  text-transform: uppercase; color: var(--ink-muted);
+}
+.yz-pa-card { display: flex; flex-direction: column; align-items: flex-start; }
+.yz-pa-h {
+  font-size: 10px; font-weight: 500; letter-spacing: 0.6px;
+  text-transform: uppercase; color: var(--ink-muted);
+}
+.yz-pa-total {
+  font-size: 16px; font-weight: 600; letter-spacing: -0.3px;
+  color: var(--ink); margin-top: 3px; font-variant-numeric: tabular-nums;
+}
+.yz-pa-rate {
+  font-size: 10px; color: var(--ink-muted); margin-top: 1px;
+  font-variant-numeric: tabular-nums;
+}
 </style>
 
 <script>
 (function () {
-  var CSV_URL = 'https://raw.githubusercontent.com/Profbroker/y-az-publish/main/catalog/data/yachts.csv';
+  var CSV_URL          = 'https://raw.githubusercontent.com/Profbroker/y-az-publish/main/catalog/data/yachts.csv';
+  var PRICES_CSV_URL   = 'https://raw.githubusercontent.com/Profbroker/y-az-publish/main/catalog/data/prices.csv';
+  var SETTINGS_CSV_URL = 'https://raw.githubusercontent.com/Profbroker/y-az-publish/main/catalog/data/settings.csv';
+  var SEASON_FB = { high_start: '01.05', high_end: '30.09' };
 
   var path = window.location.pathname;
   var lang = /\/en(\/|$)/.test(path) ? 'en' : /\/ru(\/|$)/.test(path) ? 'ru' : 'az';
@@ -296,7 +321,10 @@
       lbl_length: 'Длина',
       more:       'Подробнее →',
       book:       'Забронировать',
-      loading:    'Загрузка...'
+      loading:    'Загрузка...',
+      pa_eyebrow: 'Часто выбирают:',
+      pa_h_one:   'час', pa_h_few: 'часа', pa_h_many: 'часов',
+      pa_rate_unit: '₼/ч', pa_currency: '₼'
     },
     en: {
       from:       'from',
@@ -306,7 +334,10 @@
       lbl_length: 'Length',
       more:       'Details →',
       book:       'Book Now',
-      loading:    'Loading...'
+      loading:    'Loading...',
+      pa_eyebrow: 'Popular choices:',
+      pa_h_one:   'hour', pa_h_few: 'hours', pa_h_many: 'hours',
+      pa_rate_unit: '₼/h', pa_currency: '₼'
     },
     az: {
       from:       '-dan',
@@ -316,7 +347,10 @@
       lbl_length: 'Uzunluq',
       more:       'Ətraflı →',
       book:       'Sifariş et',
-      loading:    'Yüklənir...'
+      loading:    'Yüklənir...',
+      pa_eyebrow: 'Tez-tez seçilir:',
+      pa_h_one:   'saat', pa_h_few: 'saat', pa_h_many: 'saat',
+      pa_rate_unit: '₼/saat', pa_currency: '₼'
     }
   };
 
@@ -353,8 +387,64 @@
     return result;
   }
 
+  /* ---------- price-anchor helpers (паттерн со страницы яхты) ---------- */
+  function hourLabel(n) {
+    n = Math.abs(+n); var m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return t.pa_h_one;
+    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return t.pa_h_few;
+    return t.pa_h_many;
+  }
+  function fmtN(n) { return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+  function buildPriceAnchorHtml(items) {
+    var html = '<div class="yz-price-slot"><div class="yz-pa">' +
+               '<div class="yz-pa-eyebrow">' + t.pa_eyebrow + '</div>';
+    items.forEach(function (it) {
+      html += '<div class="yz-pa-card' + (it.popular ? ' is-popular' : '') + '">' +
+                '<div class="yz-pa-h">' + it.h + ' ' + hourLabel(it.h) + '</div>' +
+                '<div class="yz-pa-total">' + fmtN(it.total) + ' ' + t.pa_currency + '</div>' +
+                '<div class="yz-pa-rate">' + fmtN(it.total / it.h) + ' ' + t.pa_rate_unit + '</div>' +
+              '</div>';
+    });
+    return html + '</div></div>';
+  }
+  function detectSeason(s) {
+    var hs = (s.season_high_start || SEASON_FB.high_start).split('.');
+    var he = (s.season_high_end   || SEASON_FB.high_end  ).split('.');
+    var sD = +hs[0]||1, sM = +hs[1]||5, eD = +he[0]||30, eM = +he[1]||9;
+    var d = new Date(), mo = d.getMonth()+1, da = d.getDate();
+    var aft = (mo>sM)||(mo===sM&&da>=sD), bef = (mo<eM)||(mo===eM&&da<=eD);
+    return (aft && bef) ? 'high' : 'low';
+  }
+  function parseSettings(text) {
+    var rows = parseCSV(text), s = {};
+    rows.forEach(function (r) { var k = Object.keys(r); if (k.length < 2) return;
+      var kk = (r[k[0]]||'').trim(), vv = (r[k[1]]||'').trim(); if (kk) s[kk] = vv; });
+    return s;
+  }
+  /* Пресеты для одной яхты: строка prices по slug+сезону, total = h1..hN + fee */
+  function presetItems(yacht, pricesRows, season) {
+    var lo = +yacht.pa_low_h||0, mid = +yacht.pa_mid_h||0, hi = +yacht.pa_high_h||0;
+    if (!lo || !mid || !hi || !pricesRows) return null;
+    var slugLower = String(yacht.slug||'').toLowerCase();
+    var prio = {}; prio[season]=1; prio['any']=2; prio['']=2; prio[season==='high'?'low':'high']=3;
+    var picked = null;
+    for (var i=0;i<pricesRows.length;i++){ var r=pricesRows[i];
+      if (String(r.slug||'').toLowerCase()!==slugLower) continue;
+      var rs=(r.season||'any').toLowerCase();
+      if (!picked || prio[rs] < prio[(picked.season||'any').toLowerCase()]) picked=r;
+    }
+    if (!picked) return null;
+    var fee = +picked['fee']||0;
+    function calcTotal(hours){ var sum=0; for(var i=1;i<=hours;i++){var rr=+picked['h'+i]; if(!rr) return 0; sum+=rr;} return sum+fee; }
+    var a=calcTotal(lo), b=calcTotal(mid), c=calcTotal(hi);
+    if (!a || !b || !c) return null;
+    var items=[{h:lo,total:a},{h:mid,total:b,popular:true},{h:hi,total:c}];
+    items.sort(function(x,y){return x.h-y.h;});
+    return items;
+  }
+
   /* ---------- render ---------- */
-  function render(yachts) {
+  function render(yachts, pricesRows, season) {
     var active = yachts.filter(function (y) { return y.active === 'yes'; });
     if (!active.length) { grid.innerHTML = ''; return; }
 
@@ -409,9 +499,12 @@
         html += '</div>';
       }
 
-      /* price + CTAs */
+      /* price + CTAs — пресеты (как на странице яхты), фолбэк на «от X ₼/час» */
       html += '<div class="yz-card-foot">';
-      if (priceFrom) {
+      var paItems = presetItems(y, pricesRows, season);
+      if (paItems) {
+        html += buildPriceAnchorHtml(paItems);
+      } else if (priceFrom) {
         html += '<div class="yz-price">' +
                   '<span class="yz-price-from">' + t.from + '</span>' +
                   '<span class="yz-price-value">' + priceFrom + ' ' + t.currency + '</span>' +
@@ -452,10 +545,20 @@
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  /* ---------- fetch ---------- */
-  fetch(CSV_URL + '?_=' + Date.now(), { cache: 'no-store' })
-    .then(function (r) { return r.text(); })
-    .then(function (text) { render(parseCSV(text)); })
+  /* ---------- fetch: яхты + цены + настройки параллельно ---------- */
+  var bust = '?_=' + Date.now();
+  var yachtsP   = fetch(CSV_URL + bust,        { cache: 'no-store' }).then(function (r) { return r.text(); });
+  var pricesP   = fetch(PRICES_CSV_URL + bust, { cache: 'no-store' }).then(function (r) { return r.text(); }).catch(function () { return ''; });
+  var settingsP = fetch(SETTINGS_CSV_URL + bust,{ cache: 'no-store' }).then(function (r) { return r.text(); }).catch(function () { return ''; });
+
+  Promise.all([yachtsP, pricesP, settingsP])
+    .then(function (res) {
+      var yachts     = parseCSV(res[0]);
+      var pricesRows = res[1] ? parseCSV(res[1]) : null;
+      var settings   = res[2] ? parseSettings(res[2]) : {};
+      var season     = detectSeason(settings);
+      render(yachts, pricesRows, season);
+    })
     .catch(function () { grid.innerHTML = ''; });
 })();
 </script>
