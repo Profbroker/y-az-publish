@@ -281,10 +281,11 @@
 
 /* ── price-anchor: 3 пресета в карточке (паттерн со страницы яхты, компактно) ── */
 .yz-card .yz-price-slot { width: 100%; margin-bottom: 14px; }
-.yz-pa { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.yz-pa { display: flex; align-items: flex-end; gap: 18px; }
 .yz-pa-eyebrow {
-  width: 100%; margin-bottom: 4px;
-  font-size: 9px; font-weight: 500; letter-spacing: 1.2px;
+  margin-left: auto; align-self: center;
+  max-width: 96px; text-align: right;
+  font-size: 9px; font-weight: 500; letter-spacing: 1.2px; line-height: 1.35;
   text-transform: uppercase; color: var(--ink-muted);
 }
 .yz-pa-card { display: flex; flex-direction: column; align-items: flex-start; }
@@ -293,8 +294,8 @@
   text-transform: uppercase; color: var(--ink-muted);
 }
 .yz-pa-total {
-  font-size: 16px; font-weight: 600; letter-spacing: -0.3px;
-  color: var(--ink); margin-top: 3px; font-variant-numeric: tabular-nums;
+  font-size: 16px; font-weight: 500; letter-spacing: -0.2px;
+  color: var(--ink-soft); margin-top: 3px; font-variant-numeric: tabular-nums;
 }
 .yz-pa-rate {
   font-size: 10px; color: var(--ink-muted); margin-top: 1px;
@@ -404,6 +405,7 @@
                 '<div class="yz-pa-rate">' + fmtN(it.total / it.h) + ' ' + t.pa_rate_unit + '</div>' +
               '</div>';
     });
+    html += '<div class="yz-pa-eyebrow">' + t.pa_eyebrow + '</div>';
     return html + '</div></div>';
   }
   function detectSeason(s) {
