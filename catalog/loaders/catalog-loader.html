@@ -1,0 +1,54 @@
+<!--
+  catalog-loader.html
+
+  Loader для блока КАТАЛОГА (сетка карточек яхт) на /ru/yachts, /en/yachts, /az/yachts.
+  Тянет catalog/blocks/catalog.html из Profbroker/y-az-publish через raw.githubusercontent
+  (auto-purge при push — без залипшего кэша). Сам блок читает yachts.csv тоже с raw.
+
+  Размещение в Tilda: один T123 на странице /ru/yachts (и en/az) ВМЕСТО старого
+  инлайн-блока сетки, который читал Google Sheets.
+-->
+
+<div id="yz-cat-mount" style="min-height:400px;">
+  <div style="text-align:center;padding:80px 24px;color:#7A8294;font:14px Inter,sans-serif">
+    Загрузка каталога…
+  </div>
+</div>
+
+<script>
+(function () {
+  var CDN_URL = 'https://raw.githubusercontent.com/Profbroker/y-az-publish/main/catalog/blocks/catalog.html';
+  var TIMEOUT = 6000;
+
+  var mount = document.getElementById('yz-cat-mount');
+  if (!mount) return;
+
+  var ctrl  = new AbortController();
+  var timer = setTimeout(function () { ctrl.abort(); }, TIMEOUT);
+
+  fetch(CDN_URL + '?_=' + Date.now(), { signal: ctrl.signal, cache: 'no-store' })
+    .then(function (r) {
+      clearTimeout(timer);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.text();
+    })
+    .then(function (html) {
+      mount.innerHTML = html;
+      mount.querySelectorAll('script').forEach(function (old) {
+        var s = document.createElement('script');
+        for (var i = 0; i < old.attributes.length; i++) {
+          s.setAttribute(old.attributes[i].name, old.attributes[i].value);
+        }
+        s.textContent = old.textContent;
+        old.parentNode.replaceChild(s, old);
+      });
+    })
+    .catch(function (err) {
+      console.error('[catalog] loader failed:', err);
+      mount.innerHTML =
+        '<div style="text-align:center;padding:48px 24px;font:14px Inter,sans-serif;color:#7A8294">' +
+          'Не удалось загрузить каталог. Свяжитесь с нами в WhatsApp +994 50 235 02 35' +
+        '</div>';
+    });
+})();
+</script>
