@@ -106,6 +106,21 @@
   text-transform: uppercase;
 }
 
+.yz-card-base-badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 5px 10px;
+  background: rgba(255,255,255,0.95);
+  color: var(--ink);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,.18);
+}
+
 /* ── body ───────────────────────────────────────────────────── */
 .yz-card-body {
   padding: 20px 20px 0;
@@ -325,7 +340,8 @@
       loading:    'Загрузка...',
       pa_eyebrow: 'Часто выбирают:',
       pa_h_one:   'час', pa_h_few: 'часа', pa_h_many: 'часов',
-      pa_rate_unit: '₼/ч', pa_currency: '₼'
+      pa_rate_unit: '₼/ч', pa_currency: '₼',
+      base_seabreeze: 'Sea Breeze', base_bakubay: 'Бакинская бухта'
     },
     en: {
       from:       'from',
@@ -338,7 +354,8 @@
       loading:    'Loading...',
       pa_eyebrow: 'Popular choices:',
       pa_h_one:   'hour', pa_h_few: 'hours', pa_h_many: 'hours',
-      pa_rate_unit: '₼/h', pa_currency: '₼'
+      pa_rate_unit: '₼/h', pa_currency: '₼',
+      base_seabreeze: 'Sea Breeze', base_bakubay: 'Baku Bay'
     },
     az: {
       from:       '-dan',
@@ -351,7 +368,8 @@
       loading:    'Yüklənir...',
       pa_eyebrow: 'Tez-tez seçilir:',
       pa_h_one:   'saat', pa_h_few: 'saat', pa_h_many: 'saat',
-      pa_rate_unit: '₼/saat', pa_currency: '₼'
+      pa_rate_unit: '₼/saat', pa_currency: '₼',
+      base_seabreeze: 'Sea Breeze', base_bakubay: 'Bakı körfəzi'
     }
   };
 
@@ -472,6 +490,13 @@
       }
       if (type) {
         html += '<span class="yz-card-type-badge">' + type + '</span>';
+      }
+      var mrn = (y['marina '] || y['marina'] || '').toLowerCase();
+      var baseLbl = mrn.indexOf('sea breeze') !== -1 ? t.base_seabreeze
+                  : mrn.indexOf('baku')       !== -1 ? t.base_bakubay
+                  : '';
+      if (baseLbl) {
+        html += '<span class="yz-card-base-badge">\uD83D\uDCCD ' + baseLbl + '</span>';
       }
       html += '</a>';
 
