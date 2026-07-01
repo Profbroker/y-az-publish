@@ -26,6 +26,7 @@
 
 <section id="yz-cat" data-yz-cat-version="2026-05-09-noheader">
   <div id="yz-cat-inner">
+    <div id="yz-cat-filters"></div>
     <div id="yz-cat-grid"></div>
   </div>
 </section>
@@ -92,6 +93,36 @@
   object-fit: cover;
   display: block;
 }
+
+#yz-cat-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+  align-items: center;
+  margin: 0 0 26px;
+}
+.yz-f-group { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.yz-f-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.4px;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  margin-right: 4px;
+}
+.yz-f-chip {
+  padding: 7px 15px;
+  border: 1px solid #dde2e8;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.yz-f-chip:hover { border-color: var(--ink); }
+.yz-f-chip.active { background: var(--ink); color: var(--white); border-color: var(--ink); }
 
 .yz-card-type-badge {
   position: absolute;
@@ -341,7 +372,8 @@
       pa_eyebrow: 'Часто выбирают:',
       pa_h_one:   'час', pa_h_few: 'часа', pa_h_many: 'часов',
       pa_rate_unit: '₼/ч', pa_currency: '₼',
-      base_seabreeze: 'Sea Breeze', base_bakubay: 'Бакинская бухта'
+      base_seabreeze: 'Sea Breeze', base_bakubay: 'Бакинская бухта',
+      f_type: 'Тип', f_base: 'База', f_all: 'Все', f_sail: 'Парусные', f_motor: 'Моторные', f_empty: 'Ничего не найдено'
     },
     en: {
       from:       'from',
@@ -355,7 +387,8 @@
       pa_eyebrow: 'Popular choices:',
       pa_h_one:   'hour', pa_h_few: 'hours', pa_h_many: 'hours',
       pa_rate_unit: '₼/h', pa_currency: '₼',
-      base_seabreeze: 'Sea Breeze', base_bakubay: 'Baku Bay'
+      base_seabreeze: 'Sea Breeze', base_bakubay: 'Baku Bay',
+      f_type: 'Type', f_base: 'Base', f_all: 'All', f_sail: 'Sailing', f_motor: 'Motor', f_empty: 'Nothing found'
     },
     az: {
       from:       '-dan',
@@ -369,7 +402,8 @@
       pa_eyebrow: 'Tez-tez seçilir:',
       pa_h_one:   'saat', pa_h_few: 'saat', pa_h_many: 'saat',
       pa_rate_unit: '₼/saat', pa_currency: '₼',
-      base_seabreeze: 'Sea Breeze', base_bakubay: 'Bakı körfəzi'
+      base_seabreeze: 'Sea Breeze', base_bakubay: 'Bakı körfəzi',
+      f_type: 'Növ', f_base: 'Baza', f_all: 'Hamısı', f_sail: 'Yelkənli', f_motor: 'Motorlu', f_empty: 'Heç nə tapılmadı'
     }
   };
 
@@ -463,9 +497,76 @@
   }
 
   /* ---------- render ---------- */
+  var _pricesRows = null, _season = null, _activeAll = [];
+  var FILTER = { type: 'all', base: 'all' };
+
+  function catOf(y) {
+    var te  = (y['type_en'] || '').toLowerCase();
+    var mrn = (y['marina '] || y['marina'] || '').toLowerCase();
+    return {
+      type: te.indexOf('sail') !== -1 ? 'sail' : 'motor',
+      base: mrn.indexOf('sea breeze') !== -1 ? 'sea_breeze'
+          : mrn.indexOf('baku') !== -1 ? 'baku_bay' : ''
+    };
+  }
+
+  function chip(dim, val, label) {
+    return '<button class="yz-f-chip' + (FILTER[dim] === val ? ' active' : '') +
+           '" data-dim="' + dim + '" data-val="' + val + '">' + label + '</button>';
+  }
+
+  function buildFilters() {
+    var box = document.getElementById('yz-cat-filters');
+    if (!box) return;
+    var present = { type: {}, base: {} };
+    _activeAll.forEach(function (y) {
+      var c = catOf(y);
+      present.type[c.type] = 1;
+      if (c.base) present.base[c.base] = 1;
+    });
+    var html = '';
+    if (Object.keys(present.type).length >= 2) {
+      html += '<div class="yz-f-group"><span class="yz-f-label">' + t.f_type + '</span>';
+      html += chip('type', 'all', t.f_all);
+      if (present.type.sail)  html += chip('type', 'sail',  t.f_sail);
+      if (present.type.motor) html += chip('type', 'motor', t.f_motor);
+      html += '</div>';
+    }
+    if (Object.keys(present.base).length >= 2) {
+      html += '<div class="yz-f-group"><span class="yz-f-label">' + t.f_base + '</span>';
+      html += chip('base', 'all', t.f_all);
+      if (present.base.baku_bay)   html += chip('base', 'baku_bay',   t.base_bakubay);
+      if (present.base.sea_breeze) html += chip('base', 'sea_breeze', t.base_seabreeze);
+      html += '</div>';
+    }
+    box.innerHTML = html;
+    box.querySelectorAll('.yz-f-chip').forEach(function (b) {
+      b.addEventListener('click', function () {
+        FILTER[b.dataset.dim] = b.dataset.val;
+        box.querySelectorAll('.yz-f-chip[data-dim="' + b.dataset.dim + '"]').forEach(function (o) {
+          o.classList.toggle('active', o.dataset.val === b.dataset.val);
+        });
+        paint();
+      });
+    });
+  }
+
   function render(yachts, pricesRows, season) {
-    var active = yachts.filter(function (y) { return y.active === 'yes'; });
-    if (!active.length) { grid.innerHTML = ''; return; }
+    _pricesRows = pricesRows; _season = season;
+    _activeAll = yachts.filter(function (y) { return y.active === 'yes'; });
+    buildFilters();
+    paint();
+  }
+
+  function paint() {
+    var pricesRows = _pricesRows, season = _season;
+    var active = _activeAll.filter(function (y) {
+      var c = catOf(y);
+      if (FILTER.type !== 'all' && c.type !== FILTER.type) return false;
+      if (FILTER.base !== 'all' && c.base !== FILTER.base) return false;
+      return true;
+    });
+    if (!active.length) { grid.innerHTML = '<div class="yz-cat-loader">' + t.f_empty + '</div>'; return; }
 
     var html = '';
     active.forEach(function (y) {
