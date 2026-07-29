@@ -1250,6 +1250,32 @@
     return (afterStart && beforeEnd) ? 'high' : 'low';
   }
 
+  // Пер-яхтенный сезон: окна из строк prices этой яхты (season_start/end).
+  function inWindowPage(now, a, b) {
+    if (!a || !b) return false;
+    var s = a.split('.'), e = b.split('.');
+    var sD=+s[0], sM=+s[1], eD=+e[0], eM=+e[1];
+    var mo = now.getMonth()+1, da = now.getDate();
+    return ((mo>sM)||(mo===sM&&da>=sD)) && ((mo<eM)||(mo===eM&&da<=eD));
+  }
+  function pageResolveSeason(mine, settings) {
+    var avail = {};
+    (mine||[]).forEach(function (r) {
+      avail[(r.season||'any').toLowerCase()] = { start:(r.season_start||'').trim(), end:(r.season_end||'').trim() };
+    });
+    var now = new Date();
+    if (avail.high) {
+      var hs = avail.high.start || settings.season_high_start || SEASON_FB.high_start;
+      var he = avail.high.end   || settings.season_high_end   || SEASON_FB.high_end;
+      if (inWindowPage(now, hs, he)) return 'high';
+    }
+    if (avail.mid && avail.mid.start && inWindowPage(now, avail.mid.start, avail.mid.end)) return 'mid';
+    if (avail.low) return 'low';
+    if (avail.mid) return 'mid';
+    if (avail.high) return 'high';
+    return 'any';
+  }
+
   /* Парсит Settings CSV. Берёт ПЕРВЫЕ ДВЕ колонки по позиции независимо
      от языка заголовка (в Sheets может быть «ключ/значение» или «key/value»). */
   function parseSettings(text) {
@@ -1283,22 +1309,18 @@
       .then(function (results) {
         var rows     = parseCSV(results[0]);
         var settings = results[1] ? parseSettings(results[1]) : {};
-        var curSeason = detectSeason(settings);
-
         var slugLower = String(yacht.slug || slug || '').toLowerCase();
+        var mine = rows.filter(function (r) { return String(r.slug || '').toLowerCase() === slugLower; });
+        var curSeason = pageResolveSeason(mine, settings);
 
-        /* Приоритет: текущий сезон → any → другой сезон.
-           Так в межсезонье берём low-цены (если они заполнены), летом — high. */
-        var prio = {};
-        prio[curSeason]  = 1;
-        prio['any']      = 2;
-        prio['']         = 2;
-        prio[curSeason === 'high' ? 'low' : 'high'] = 3;
+        /* Приоритет: текущий сезон → any → любой другой заданный. */
+        var prio = { 'any': 2, '': 2 };
+        prio[curSeason] = 1;
+        ['high', 'mid', 'low'].forEach(function (s) { if (prio[s] === undefined) prio[s] = 3; });
 
         var picked = null;
-        for (var i = 0; i < rows.length; i++) {
-          var r = rows[i];
-          if (String(r.slug || '').toLowerCase() !== slugLower) continue;
+        for (var i = 0; i < mine.length; i++) {
+          var r = mine[i];
           var rSeason = (r.season || 'any').toLowerCase();
           if (!picked || (prio[rSeason] < prio[(picked.season || 'any').toLowerCase()])) {
             picked = r;

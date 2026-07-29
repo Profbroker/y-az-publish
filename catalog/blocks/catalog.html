@@ -468,6 +468,32 @@
     var aft = (mo>sM)||(mo===sM&&da>=sD), bef = (mo<eM)||(mo===eM&&da<=eD);
     return (aft && bef) ? 'high' : 'low';
   }
+  // Пер-яхтенный сезон: окна из строк prices этой яхты (season_start/end).
+  function inWindowCat(now, a, b) {
+    if (!a || !b) return false;
+    var s = a.split('.'), e = b.split('.');
+    var sD=+s[0], sM=+s[1], eD=+e[0], eM=+e[1];
+    var mo = now.getMonth()+1, da = now.getDate();
+    return ((mo>sM)||(mo===sM&&da>=sD)) && ((mo<eM)||(mo===eM&&da<=eD));
+  }
+  function catResolveSeason(yacht, pricesRows, settings) {
+    var slug = String(yacht.slug||'').toLowerCase(), avail = {};
+    (pricesRows||[]).forEach(function (r) {
+      if (String(r.slug||'').toLowerCase() !== slug) return;
+      avail[(r.season||'any').toLowerCase()] = { start:(r.season_start||'').trim(), end:(r.season_end||'').trim() };
+    });
+    var now = new Date();
+    if (avail.high) {
+      var hs = avail.high.start || settings.season_high_start || SEASON_FB.high_start;
+      var he = avail.high.end   || settings.season_high_end   || SEASON_FB.high_end;
+      if (inWindowCat(now, hs, he)) return 'high';
+    }
+    if (avail.mid && avail.mid.start && inWindowCat(now, avail.mid.start, avail.mid.end)) return 'mid';
+    if (avail.low) return 'low';
+    if (avail.mid) return 'mid';
+    if (avail.high) return 'high';
+    return 'any';
+  }
   function parseSettings(text) {
     var rows = parseCSV(text), s = {};
     rows.forEach(function (r) { var k = Object.keys(r); if (k.length < 2) return;
@@ -497,7 +523,7 @@
   }
 
   /* ---------- render ---------- */
-  var _pricesRows = null, _season = null, _activeAll = [];
+  var _pricesRows = null, _settings = {}, _activeAll = [];
   var FILTER = { type: 'all', base: 'all' };
 
   function catOf(y) {
@@ -551,15 +577,15 @@
     });
   }
 
-  function render(yachts, pricesRows, season) {
-    _pricesRows = pricesRows; _season = season;
+  function render(yachts, pricesRows, settings) {
+    _pricesRows = pricesRows; _settings = settings || {};
     _activeAll = yachts.filter(function (y) { return y.active === 'yes'; });
     buildFilters();
     paint();
   }
 
   function paint() {
-    var pricesRows = _pricesRows, season = _season;
+    var pricesRows = _pricesRows;
     var active = _activeAll.filter(function (y) {
       var c = catOf(y);
       if (FILTER.type !== 'all' && c.type !== FILTER.type) return false;
@@ -628,7 +654,7 @@
 
       /* price + CTAs — пресеты (как на странице яхты), фолбэк на «от X ₼/час» */
       html += '<div class="yz-card-foot">';
-      var paItems = presetItems(y, pricesRows, season);
+      var paItems = presetItems(y, pricesRows, catResolveSeason(y, pricesRows, _settings));
       if (paItems) {
         html += buildPriceAnchorHtml(paItems);
       } else if (priceFrom) {
@@ -683,8 +709,7 @@
       var yachts     = parseCSV(res[0]);
       var pricesRows = res[1] ? parseCSV(res[1]) : null;
       var settings   = res[2] ? parseSettings(res[2]) : {};
-      var season     = detectSeason(settings);
-      render(yachts, pricesRows, season);
+      render(yachts, pricesRows, settings);
     })
     .catch(function () { grid.innerHTML = ''; });
 })();
