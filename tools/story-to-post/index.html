@@ -1,0 +1,691 @@
+<!doctype html>
+<!--
+  tools/story-to-post — пересборка старых сторис в посты / карусели Instagram.
+
+  Работает целиком в браузере, ничего никуда не загружает.
+  Открыть: скачать файл и открыть локально, либо
+  https://raw.githack.com/Profbroker/y-az-publish/main/tools/story-to-post/index.html
+
+  Вход:
+    • отдельные фото/видео сторис (drag&drop или «Выбрать файлы»);
+    • папка экспорта Instagram (Настройки → Центр аккаунтов → Скачать информацию,
+      формат JSON) — даты сторис берутся из stories.json.
+  Выход: JPG 1080×1440 (3:4) / 1080×1350 (4:5) / 1080×1080 (1:1) / 1080×1920 (9:16),
+  по одному на слайд, архивом .zip + черновик подписи (ru/en/az) под яхту из yachts.csv.
+-->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Сторис → пост</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+:root {
+  --ink:       #0E1726;
+  --ink-soft:  #3A4456;
+  --ink-muted: #7A8294;
+  --rule:      #E8E5DD;
+  --paper:     #FBFAF6;
+  --white:     #FFFFFF;
+  --navy:      #0E375E;
+  --accent:    #0E375E;
+  --sel:       #2F7BD8;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ink: #EDEBE4; --ink-soft: #C3C6CE; --ink-muted: #8C93A1;
+    --rule: #2A3140; --paper: #0F141C; --white: #171D27; --accent: #8FB8E6; --sel: #5A9BEA;
+  }
+}
+:root[data-theme="dark"] {
+  --ink: #EDEBE4; --ink-soft: #C3C6CE; --ink-muted: #8C93A1;
+  --rule: #2A3140; --paper: #0F141C; --white: #171D27; --accent: #8FB8E6; --sel: #5A9BEA;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font: 14px/1.45 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+header { padding: 20px 16px 8px; max-width: 1400px; margin: 0 auto; }
+header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -.01em; }
+header p { margin: 0; color: var(--ink-muted); }
+main {
+  max-width: 1400px; margin: 0 auto; padding: 12px 16px 48px;
+  display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 20px; align-items: start;
+}
+@media (max-width: 960px) { main { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--white); border: 1px solid var(--rule); padding: 16px; }
+.panel h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-soft); }
+.panel + .panel { margin-top: 16px; }
+
+#drop {
+  border: 1.5px dashed var(--rule); padding: 20px; text-align: center; color: var(--ink-muted);
+  transition: border-color .15s, background .15s;
+}
+#drop.over { border-color: var(--sel); background: color-mix(in srgb, var(--sel) 8%, transparent); }
+#drop .btns { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 10px; }
+
+button, .btn {
+  font: inherit; font-weight: 500; cursor: pointer; border: 1px solid var(--ink); background: transparent;
+  color: var(--ink); padding: 7px 12px; border-radius: 0;
+}
+button.primary { background: var(--ink); color: var(--paper); }
+button:disabled { opacity: .4; cursor: default; }
+label.btn input { display: none; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.toolbar .grow { flex: 1; }
+select, input[type=text], input[type=date], textarea {
+  font: inherit; color: var(--ink); background: var(--paper); border: 1px solid var(--rule); padding: 6px 8px; border-radius: 0;
+}
+textarea { width: 100%; resize: vertical; }
+
+#library { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.thumb { position: relative; aspect-ratio: 9/16; background: #000; cursor: pointer; overflow: hidden; outline-offset: 2px; }
+.thumb img, .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .meta {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px; font-size: 11px; color: #fff;
+  background: linear-gradient(transparent, rgba(0,0,0,.7));
+}
+.thumb .badge { position: absolute; top: 4px; left: 4px; font-size: 10px; background: rgba(0,0,0,.6); color: #fff; padding: 1px 5px; }
+.thumb .num {
+  position: absolute; top: 4px; right: 4px; width: 22px; height: 22px; border-radius: 50%; display: none;
+  place-items: center; background: var(--sel); color: #fff; font-weight: 700; font-size: 12px;
+}
+.thumb.selected { outline: 3px solid var(--sel); }
+.thumb.selected .num { display: grid; }
+.empty { color: var(--ink-muted); padding: 24px 0; text-align: center; }
+
+#slides { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; }
+#slides canvas { height: 150px; width: auto; cursor: pointer; border: 2px solid transparent; flex: none; }
+#slides canvas.active { border-color: var(--sel); }
+
+#stage { position: relative; }
+#editor { width: 100%; height: auto; display: block; background: #000; cursor: grab; touch-action: none; }
+#editor:active { cursor: grabbing; }
+.row { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; margin: 8px 0; }
+.row > span { color: var(--ink-soft); }
+.row input[type=range] { width: 100%; }
+.seg { display: flex; flex-wrap: wrap; }
+.seg button { border-color: var(--rule); margin: 0 -1px -1px 0; padding: 5px 9px; font-size: 13px; }
+.seg button.on { background: var(--ink); color: var(--paper); border-color: var(--ink); position: relative; }
+.hint { color: var(--ink-muted); font-size: 12px; margin: 6px 0 0; }
+.hidden { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Сторис → пост</h1>
+  <p>Пересобираем старые сторис в посты и карусели. Всё работает в браузере — файлы никуда не загружаются.</p>
+</header>
+
+<main>
+  <section>
+    <div class="panel">
+      <h2>1 · Архив сторис</h2>
+      <div id="drop">
+        Перетащи сюда фото/видео сторис или всю папку экспорта Instagram
+        <div class="btns">
+          <label class="btn">Выбрать файлы<input id="pickFiles" type="file" multiple accept="image/*,video/*"></label>
+          <label class="btn">Папка экспорта Instagram<input id="pickDir" type="file" webkitdirectory multiple></label>
+        </div>
+        <p class="hint">Экспорт: Instagram → Центр аккаунтов → Ваша информация → Скачать информацию → формат JSON. Даты сторис подтянутся из stories.json.</p>
+      </div>
+
+      <div class="toolbar">
+        <input type="date" id="from" title="С даты">
+        <input type="date" id="to" title="По дату">
+        <select id="kind">
+          <option value="all">Фото и видео</option>
+          <option value="image">Только фото</option>
+          <option value="video">Только видео</option>
+        </select>
+        <span class="grow"></span>
+        <span id="count" class="hint"></span>
+        <button id="clearSel" disabled>Снять выбор</button>
+      </div>
+      <div id="library"><div class="empty">Пока пусто</div></div>
+      <p class="hint">Кликай по сторис в нужном порядке — это будут слайды карусели. Одна сторис = одиночный пост.</p>
+    </div>
+  </section>
+
+  <aside>
+    <div class="panel">
+      <h2>2 · Слайд</h2>
+      <div id="noSlide" class="empty">Выбери сторис слева</div>
+      <div id="slideUI" class="hidden">
+        <div id="slides"></div>
+        <div id="stage"><canvas id="editor"></canvas></div>
+        <p class="hint">Тяни картинку, чтобы подвинуть кадр.</p>
+
+        <div class="row"><span>Формат</span>
+          <div class="seg" id="fmt">
+            <button data-v="3:4" class="on">3:4</button><button data-v="4:5">4:5</button><button data-v="1:1">1:1</button><button data-v="9:16">9:16</button>
+          </div>
+        </div>
+        <div class="row"><span>Раскладка</span>
+          <div class="seg" id="mode">
+            <button data-v="fill" class="on">Кроп</button><button data-v="blur">Размытый фон</button><button data-v="frame">Рамка</button>
+          </div>
+        </div>
+        <div class="row"><span>Масштаб</span><input type="range" id="zoom" min="1" max="3" step="0.01" value="1"></div>
+        <div class="row" id="timeRow"><span>Кадр видео</span><input type="range" id="time" min="0" max="1" step="0.01" value="0"></div>
+        <div class="row"><span>Подпись на фото</span><input type="text" id="overlay" placeholder="напр. «Закат в бухте · Nemo»"></div>
+        <div class="row"><span>Лого yacht.az</span><label><input type="checkbox" id="wm" checked> в углу</label></div>
+        <div class="row"><span></span><label><input type="checkbox" id="applyAll" checked> раскладка — для всех слайдов</label></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>3 · Подпись к посту</h2>
+      <div class="toolbar" style="margin-top:0">
+        <select id="yacht"><option value="">Яхта не указана</option></select>
+        <select id="lang"><option value="ru">RU</option><option value="en">EN</option><option value="az">AZ</option></select>
+        <select id="tone">
+          <option value="memory">Воспоминание</option>
+          <option value="season">Анонс сезона</option>
+          <option value="offer">Предложение</option>
+        </select>
+      </div>
+      <textarea id="caption" rows="9"></textarea>
+      <div class="toolbar">
+        <button id="regen">Сгенерировать заново</button>
+        <button id="copy">Скопировать</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>4 · Экспорт</h2>
+      <div class="toolbar" style="margin:0">
+        <button class="primary" id="exportZip" disabled>Скачать .zip</button>
+        <button id="exportOne" disabled>Только этот слайд</button>
+      </div>
+      <p class="hint" id="exportInfo"></p>
+    </div>
+  </aside>
+</main>
+
+<script>
+(() => {
+  const YACHTS_CSV = 'https://raw.githubusercontent.com/Profbroker/y-az-publish/main/catalog/data/yachts.csv';
+  const OUT_W = 1080;
+  const FORMATS = { '3:4': 1440, '4:5': 1350, '1:1': 1080, '9:16': 1920 };
+  const MEDIA_RE = /\.(jpe?g|png|webp|gif|heic|mp4|mov|webm|m4v)$/i;
+  const VIDEO_RE = /\.(mp4|mov|webm|m4v)$/i;
+
+  const $ = id => document.getElementById(id);
+  const state = { items: [], selected: [], active: -1, yachts: [] };
+
+  // ── ввод ────────────────────────────────────────────────────────
+  const drop = $('drop');
+  ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => { ev.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', async ev => {
+    const entries = [...ev.dataTransfer.items].map(i => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+    const files = entries.length ? (await Promise.all(entries.map(walkEntry))).flat() : [...ev.dataTransfer.files];
+    ingest(files);
+  });
+  $('pickFiles').addEventListener('change', e => ingest([...e.target.files]));
+  $('pickDir').addEventListener('change', e => ingest([...e.target.files]));
+
+  function walkEntry(entry, path = '') {
+    return new Promise(resolve => {
+      if (entry.isFile) {
+        entry.file(f => { f.relPath = path + f.name; resolve([f]); }, () => resolve([]));
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader(), all = [];
+        const read = () => reader.readEntries(async batch => {
+          if (!batch.length) {
+            resolve((await Promise.all(all.map(e => walkEntry(e, path + entry.name + '/')))).flat());
+          } else { all.push(...batch); read(); }
+        }, () => resolve([]));
+        read();
+      } else resolve([]);
+    });
+  }
+
+  // Instagram кладёт не-ASCII в JSON как latin1-байты UTF-8 — чиним.
+  const fixMojibake = s => { try { return decodeURIComponent(escape(s)); } catch { return s; } };
+
+  async function readStoriesMeta(files) {
+    const meta = new Map();
+    for (const f of files.filter(f => /stories\.json$/i.test(pathOf(f)))) {
+      try {
+        const json = JSON.parse(await f.text());
+        const walk = node => {
+          if (Array.isArray(node)) return node.forEach(walk);
+          if (node && typeof node === 'object') {
+            if (typeof node.uri === 'string' && node.creation_timestamp) {
+              meta.set(node.uri.split('/').pop(), {
+                date: new Date(node.creation_timestamp * 1000),
+                title: node.title ? fixMojibake(node.title) : ''
+              });
+            }
+            Object.values(node).forEach(walk);
+          }
+        };
+        walk(json);
+      } catch (e) { console.warn('stories.json', e); }
+    }
+    return meta;
+  }
+
+  const pathOf = f => f.relPath || f.webkitRelativePath || f.name;
+
+  async function ingest(files) {
+    const meta = await readStoriesMeta(files);
+    let media = files.filter(f => MEDIA_RE.test(f.name));
+    // В полном экспорте берём только сторис, если они там есть.
+    const storyOnly = media.filter(f => /(^|\/)stories\//i.test(pathOf(f)));
+    if (storyOnly.length) media = storyOnly;
+
+    const known = new Set(state.items.map(i => i.key));
+    for (const f of media) {
+      const key = pathOf(f) + ':' + f.size;
+      if (known.has(key)) continue;
+      const m = meta.get(f.name);
+      state.items.push({
+        key, file: f, name: f.name,
+        type: VIDEO_RE.test(f.name) || f.type.startsWith('video') ? 'video' : 'image',
+        url: URL.createObjectURL(f),
+        date: m ? m.date : new Date(f.lastModified),
+        title: m ? m.title : '',
+        source: null, duration: 0, time: 0,
+        zoom: 1, cx: .5, cy: .5, overlay: ''
+      });
+    }
+    state.items.sort((a, b) => a.date - b.date);
+    renderLibrary();
+  }
+
+  // ── библиотека ──────────────────────────────────────────────────
+  const fmtDate = d => d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  function visibleItems() {
+    const from = $('from').valueAsDate, to = $('to').valueAsDate, kind = $('kind').value;
+    return state.items.filter(i =>
+      (!from || i.date >= from) &&
+      (!to || i.date < new Date(to.getTime() + 864e5)) &&
+      (kind === 'all' || i.type === kind));
+  }
+  ['from', 'to', 'kind'].forEach(id => $(id).addEventListener('change', renderLibrary));
+
+  function renderLibrary() {
+    const lib = $('library'), items = visibleItems();
+    lib.innerHTML = '';
+    $('count').textContent = state.items.length ? `${items.length} из ${state.items.length}` : '';
+    if (!items.length) { lib.innerHTML = '<div class="empty">' + (state.items.length ? 'Ничего не подходит под фильтр' : 'Пока пусто') + '</div>'; return; }
+    for (const it of items) {
+      const el = document.createElement('div');
+      el.className = 'thumb';
+      el.title = it.title || it.name;
+      const media = it.type === 'video'
+        ? `<video src="${it.url}#t=0.5" muted preload="metadata" playsinline></video>`
+        : `<img src="${it.url}" loading="lazy" alt="">`;
+      el.innerHTML = media + (it.type === 'video' ? '<span class="badge">видео</span>' : '') +
+        `<span class="num"></span><div class="meta">${fmtDate(it.date)}</div>`;
+      el.addEventListener('click', () => toggle(it));
+      it.el = el;
+      lib.appendChild(el);
+    }
+    syncSelection();
+  }
+
+  function toggle(it) {
+    const idx = state.selected.indexOf(it);
+    if (idx >= 0) state.selected.splice(idx, 1); else state.selected.push(it);
+    state.active = state.selected.length ? Math.min(state.active < 0 ? 0 : state.active, state.selected.length - 1) : -1;
+    if (idx < 0) state.active = state.selected.length - 1;
+    syncSelection();
+  }
+  $('clearSel').addEventListener('click', () => { state.selected = []; state.active = -1; syncSelection(); });
+
+  function syncSelection() {
+    for (const it of state.items) {
+      if (!it.el) continue;
+      const n = state.selected.indexOf(it);
+      it.el.classList.toggle('selected', n >= 0);
+      it.el.querySelector('.num').textContent = n >= 0 ? n + 1 : '';
+    }
+    const has = state.selected.length > 0;
+    $('clearSel').disabled = !has;
+    $('exportZip').disabled = !has;
+    $('exportOne').disabled = !has;
+    $('noSlide').classList.toggle('hidden', has);
+    $('slideUI').classList.toggle('hidden', !has);
+    $('exportInfo').textContent = has
+      ? (state.selected.length === 1 ? 'Одиночный пост' : `Карусель из ${state.selected.length} слайдов`) +
+        (state.selected.length > 20 ? ' — Instagram берёт максимум 20' : '')
+      : '';
+    renderSlides();
+    loadActive();
+    generateCaption();
+  }
+
+  // ── загрузка кадра ──────────────────────────────────────────────
+  function ensureSource(it) {
+    if (it.source) return Promise.resolve(it.source);
+    return it.type === 'image' ? loadImage(it) : loadVideoFrame(it, null);
+  }
+  function loadImage(it) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => { it.source = img; resolve(img); };
+      img.onerror = () => reject(new Error('Браузер не открыл ' + it.name + (/heic$/i.test(it.name) ? ' (HEIC — сначала конвертируй в JPG)' : '')));
+      img.src = it.url;
+    });
+  }
+  function loadVideoFrame(it, t) {
+    return new Promise((resolve, reject) => {
+      const v = it.video || (it.video = Object.assign(document.createElement('video'), { muted: true, playsInline: true, preload: 'auto', src: it.url }));
+      const grab = () => {
+        const c = document.createElement('canvas');
+        c.width = v.videoWidth; c.height = v.videoHeight;
+        c.getContext('2d').drawImage(v, 0, 0);
+        it.source = c;
+        resolve(c);
+      };
+      const seek = () => {
+        it.duration = v.duration || 0;
+        const target = t == null ? (it.time || Math.min(1, it.duration / 2)) : t;
+        it.time = target;
+        if (Math.abs(v.currentTime - target) < 0.01 && v.readyState >= 2) return grab();
+        v.addEventListener('seeked', grab, { once: true });
+        v.currentTime = target;
+      };
+      v.onerror = () => reject(new Error('Браузер не открыл видео ' + it.name));
+      if (v.readyState >= 1) seek(); else v.addEventListener('loadedmetadata', seek, { once: true });
+    });
+  }
+
+  // ── рендер слайда ───────────────────────────────────────────────
+  const opts = { format: '3:4', mode: 'fill', wm: true };
+
+  function drawSlide(ctx, it, W, H) {
+    const src = it.source;
+    const sw = src.naturalWidth || src.width, sh = src.naturalHeight || src.height;
+    const mode = it.mode || opts.mode;
+    ctx.save();
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, H);
+
+    let box = { x: 0, y: 0, w: W, h: H };
+    if (mode === 'frame') {
+      ctx.fillStyle = '#FBFAF6';
+      ctx.fillRect(0, 0, W, H);
+      const pad = Math.round(W * 0.06), strip = Math.round(W * 0.14);
+      box = { x: pad, y: pad, w: W - pad * 2, h: H - pad - strip };
+    }
+
+    if (mode === 'blur') {
+      const s = Math.max(W / sw, H / sh);
+      ctx.filter = `blur(${Math.round(W * 0.045)}px) brightness(0.75)`;
+      ctx.drawImage(src, (W - sw * s) / 2 - 40, (H - sh * s) / 2 - 40, sw * s + 80, sh * s + 80);
+      ctx.filter = 'none';
+      const c = Math.min(W / sw, H / sh) * it.zoom;
+      const dw = sw * c, dh = sh * c;
+      ctx.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    } else {
+      // кроп: точка (cx, cy) исходника — в центр кадра, без пустых краёв
+      const s = Math.max(box.w / sw, box.h / sh) * it.zoom;
+      const dw = sw * s, dh = sh * s;
+      let dx = box.x + box.w / 2 - it.cx * dw, dy = box.y + box.h / 2 - it.cy * dh;
+      dx = Math.min(box.x, Math.max(box.x + box.w - dw, dx));
+      dy = Math.min(box.y, Math.max(box.y + box.h - dh, dy));
+      it.cx = (box.x + box.w / 2 - dx) / dw;
+      it.cy = (box.y + box.h / 2 - dy) / dh;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(box.x, box.y, box.w, box.h); ctx.clip();
+      ctx.drawImage(src, dx, dy, dw, dh);
+      ctx.restore();
+    }
+
+    const u = W / 1080;
+    if (mode === 'frame') {
+      const baseY = box.y + box.h + (H - box.y - box.h) / 2;
+      ctx.fillStyle = '#0E1726';
+      ctx.textBaseline = 'middle';
+      ctx.font = `600 ${38 * u}px Inter, sans-serif`;
+      ctx.fillText(it.overlay || fmtDateLong(it.date), box.x, baseY);
+      ctx.fillStyle = '#7A8294';
+      ctx.font = `500 ${30 * u}px Inter, sans-serif`;
+      ctx.textAlign = 'right';
+      ctx.fillText('yacht.az', box.x + box.w, baseY);
+    } else {
+      if (it.overlay) {
+        const g = ctx.createLinearGradient(0, H * 0.72, 0, H);
+        g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.6)');
+        ctx.fillStyle = g; ctx.fillRect(0, H * 0.72, W, H * 0.28);
+        ctx.fillStyle = '#fff';
+        ctx.font = `600 ${52 * u}px Inter, sans-serif`;
+        ctx.textBaseline = 'alphabetic';
+        wrapText(ctx, it.overlay, 64 * u, H - 120 * u, W - 128 * u, 62 * u);
+      }
+      if (opts.wm) {
+        ctx.font = `600 ${28 * u}px Inter, sans-serif`;
+        ctx.textAlign = 'right'; ctx.textBaseline = 'alphabetic';
+        ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 8 * u;
+        ctx.fillStyle = 'rgba(255,255,255,.9)';
+        ctx.fillText('yacht.az', W - 40 * u, H - 40 * u);
+      }
+    }
+    ctx.restore();
+  }
+
+  function wrapText(ctx, text, x, yBottom, maxW, lh) {
+    const words = text.split(/\s+/), lines = [];
+    let line = '';
+    for (const w of words) {
+      const t = line ? line + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && line) { lines.push(line); line = w; } else line = t;
+    }
+    if (line) lines.push(line);
+    lines.slice(-3).reverse().forEach((l, i) => ctx.fillText(l, x, yBottom - i * lh));
+  }
+
+  const fmtDateLong = d => d.toLocaleDateString('ru-RU', { month: 'long', year: 'numeric' });
+  const outH = () => Math.round(OUT_W * FORMATS[opts.format] / 1080);
+
+  // ── превью ──────────────────────────────────────────────────────
+  const editor = $('editor');
+  async function loadActive() {
+    const it = state.selected[state.active];
+    if (!it) return;
+    try { await ensureSource(it); } catch (e) { alert(e.message); return; }
+    $('zoom').value = it.zoom;
+    $('overlay').value = it.overlay;
+    const mode = it.mode || opts.mode;
+    [...$('mode').children].forEach(b => b.classList.toggle('on', b.dataset.v === mode));
+    $('timeRow').classList.toggle('hidden', it.type !== 'video');
+    if (it.type === 'video') { $('time').max = it.duration || 1; $('time').value = it.time; }
+    drawEditor();
+  }
+  function drawEditor() {
+    const it = state.selected[state.active];
+    if (!it || !it.source) return;
+    const W = 540, H = Math.round(W * FORMATS[opts.format] / 1080);
+    editor.width = W; editor.height = H;
+    drawSlide(editor.getContext('2d'), it, W, H);
+    drawThumb(state.active);
+  }
+
+  function renderSlides() {
+    const wrap = $('slides');
+    wrap.innerHTML = '';
+    state.selected.forEach((it, i) => {
+      const c = document.createElement('canvas');
+      c.className = i === state.active ? 'active' : '';
+      c.addEventListener('click', () => { state.active = i; renderSlides(); loadActive(); });
+      wrap.appendChild(c);
+      ensureSource(it).then(() => drawThumb(i)).catch(() => {});
+    });
+  }
+  function drawThumb(i) {
+    const c = $('slides').children[i], it = state.selected[i];
+    if (!c || !it || !it.source) return;
+    const W = 120, H = Math.round(W * FORMATS[opts.format] / 1080);
+    c.width = W; c.height = H;
+    drawSlide(c.getContext('2d'), it, W, H);
+  }
+  const redrawAll = () => { state.selected.forEach((_, i) => drawThumb(i)); drawEditor(); };
+
+  // перетаскивание кадра
+  let drag = null;
+  editor.addEventListener('pointerdown', e => {
+    const it = state.selected[state.active];
+    if (!it) return;
+    editor.setPointerCapture(e.pointerId);
+    drag = { x: e.clientX, y: e.clientY, cx: it.cx, cy: it.cy };
+  });
+  editor.addEventListener('pointermove', e => {
+    const it = state.selected[state.active];
+    if (!drag || !it) return;
+    const r = editor.getBoundingClientRect();
+    const sw = it.source.naturalWidth || it.source.width, sh = it.source.naturalHeight || it.source.height;
+    const s = Math.max(r.width / sw, r.height / sh) * it.zoom;
+    it.cx = drag.cx - (e.clientX - drag.x) / (sw * s);
+    it.cy = drag.cy - (e.clientY - drag.y) / (sh * s);
+    drawEditor();
+  });
+  editor.addEventListener('pointerup', () => { drag = null; });
+
+  // ── контролы ────────────────────────────────────────────────────
+  function seg(id, key) {
+    $(id).addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      [...$(id).children].forEach(x => x.classList.toggle('on', x === b));
+      if (key === 'mode' && !$('applyAll').checked) {
+        const it = state.selected[state.active];
+        if (it) it.mode = b.dataset.v;
+      } else {
+        opts[key] = b.dataset.v;
+        if (key === 'mode') state.selected.forEach(it => delete it.mode);
+      }
+      redrawAll();
+    });
+  }
+  seg('fmt', 'format');
+  seg('mode', 'mode');
+  $('wm').addEventListener('change', e => { opts.wm = e.target.checked; redrawAll(); });
+  $('zoom').addEventListener('input', e => { const it = state.selected[state.active]; if (it) { it.zoom = +e.target.value; drawEditor(); } });
+  $('overlay').addEventListener('input', e => { const it = state.selected[state.active]; if (it) { it.overlay = e.target.value; drawEditor(); } });
+  let seeking = null;
+  $('time').addEventListener('input', e => {
+    const it = state.selected[state.active];
+    if (!it) return;
+    const t = +e.target.value;
+    clearTimeout(seeking);
+    seeking = setTimeout(() => loadVideoFrame(it, t).then(drawEditor), 60);
+  });
+
+  // ── подпись ─────────────────────────────────────────────────────
+  fetch(YACHTS_CSV).then(r => r.text()).then(text => {
+    const rows = parseCSV(text), head = rows.shift().map(h => h.trim());
+    state.yachts = rows.filter(r => r.length > 1).map(r => Object.fromEntries(head.map((h, i) => [h, r[i] || ''])))
+      .filter(y => (y.active || '').toLowerCase() === 'yes');
+    for (const y of state.yachts) $('yacht').add(new Option(`${y.name} · ${y.type_ru}`, y.slug));
+  }).catch(() => {});
+
+  function parseCSV(text) {
+    const rows = []; let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') q = false;
+        else cell += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === ',') { row.push(cell); cell = ''; }
+      else if (ch === '\n') { row.push(cell.replace(/\r$/, '')); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  const MONTHS = {
+    ru: ['январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре'],
+    en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+    az: ['yanvarda', 'fevralda', 'martda', 'apreldə', 'mayda', 'iyunda', 'iyulda', 'avqustda', 'sentyabrda', 'oktyabrda', 'noyabrda', 'dekabrda']
+  };
+  const TEMPLATES = {
+    ru: {
+      memory: (w, y) => `Листали архив сторис и нашли ${w}${y ? ` — на борту ${y.name}` : ''} 🌊\n\nТакие вечера в Бакинской бухте хочется повторять. Какой кадр ваш любимый?`,
+      season: (w, y) => `Это было ${w}. Сезон снова рядом — самое время бронировать даты${y ? ` на ${y.name}` : ''} ⛵️\n\nПишите в директ или бронируйте на yacht.az`,
+      offer: (w, y) => `${y ? `${y.name} — ${(y.type_ru || '').toLowerCase()}` : 'Яхта'} с капитаном в Баку.${y && y.guests ? ` До ${y.guests} гостей.` : ''}\nКадры — ${w}, из наших сторис.\n\nБронь: ${y && y.url_ru ? y.url_ru : 'yacht.az'}`
+    },
+    en: {
+      memory: (w, y) => `Scrolling through our story archive and found ${w}${y ? ` — on board ${y.name}` : ''} 🌊\n\nEvenings in Baku Bay worth repeating. Which shot is your favourite?`,
+      season: (w, y) => `This was ${w}. The season is close again — time to book your dates${y ? ` on ${y.name}` : ''} ⛵️\n\nDM us or book at yacht.az`,
+      offer: (w, y) => `${y ? `${y.name} — ${(y.type_en || '').toLowerCase()}` : 'A yacht'} with a captain in Baku.${y && y.guests ? ` Up to ${y.guests} guests.` : ''}\nShots from ${w}, from our stories.\n\nBook: ${y && y.url_en ? y.url_en : 'yacht.az'}`
+    },
+    az: {
+      memory: (w, y) => `Hekayə arxivimizə baxdıq və ${w} tapdıq${y ? ` — ${y.name} göyərtəsində` : ''} 🌊\n\nBakı körfəzində belə axşamları təkrarlamaq istəyirsən. Sizin sevimli kadrınız hansıdır?`,
+      season: (w, y) => `Bu, ${w} idi. Mövsüm yenə yaxındır — tarixləri${y ? ` ${y.name} üçün` : ''} bron etmək vaxtıdır ⛵️\n\nDirektə yazın və ya yacht.az-da bron edin`,
+      offer: (w, y) => `${y ? `${y.name} — ${(y.type_az || '').toLowerCase()}` : 'Yaxta'} Bakıda kapitanla.${y && y.guests ? ` ${y.guests} qonağa qədər.` : ''}\nKadrlar — ${w}, hekayələrimizdən.\n\nBron: ${y && y.url_az ? y.url_az : 'yacht.az'}`
+    }
+  };
+  const TAGS = '#yachtaz #baku #bakı #яхтабаку #yachtbaku #caspiansea #bakubay';
+
+  function whenPhrase(lang) {
+    const dates = state.selected.map(i => i.date);
+    if (!dates.length) return '';
+    const d = new Date(Math.min(...dates)), year = d.getFullYear(), m = d.getMonth();
+    if (lang === 'ru') return `кадры, снятые в ${MONTHS.ru[m]} ${year}`;
+    if (lang === 'en') return `shots from ${MONTHS.en[m]} ${year}`;
+    return `${year} ${MONTHS.az[m]} çəkilmiş kadrları`;
+  }
+  function generateCaption() {
+    if (!state.selected.length) { $('caption').value = ''; return; }
+    const lang = $('lang').value, tone = $('tone').value;
+    const y = state.yachts.find(y => y.slug === $('yacht').value);
+    let w = whenPhrase(lang);
+    // «найти кадры, снятые…» vs «shots from …» — для season/offer нужен голый период
+    if (tone !== 'memory') w = w.replace(/^кадры, снятые в /, 'в ').replace(/^shots from /, 'in ').replace(/ çəkilmiş kadrları$/, '');
+    $('caption').value = TEMPLATES[lang][tone](w, y) + '\n\n' + TAGS;
+  }
+  ['yacht', 'lang', 'tone'].forEach(id => $(id).addEventListener('change', generateCaption));
+  $('regen').addEventListener('click', generateCaption);
+  $('copy').addEventListener('click', () => navigator.clipboard.writeText($('caption').value));
+
+  // ── экспорт ─────────────────────────────────────────────────────
+  async function renderFull(it) {
+    await ensureSource(it);
+    const c = document.createElement('canvas');
+    c.width = OUT_W; c.height = outH();
+    drawSlide(c.getContext('2d'), it, c.width, c.height);
+    return new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  }
+  const stamp = d => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const download = (blob, name) => {
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: name });
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+
+  $('exportOne').addEventListener('click', async () => {
+    const it = state.selected[state.active];
+    if (it) download(await renderFull(it), `post-${stamp(it.date)}-${state.active + 1}.jpg`);
+  });
+  $('exportZip').addEventListener('click', async () => {
+    const btn = $('exportZip');
+    btn.disabled = true;
+    try {
+      const zip = new JSZip(), base = `post-${stamp(state.selected[0].date)}`;
+      for (let i = 0; i < state.selected.length; i++) {
+        btn.textContent = `Рендер ${i + 1}/${state.selected.length}…`;
+        zip.file(`${base}-${String(i + 1).padStart(2, '0')}.jpg`, await renderFull(state.selected[i]));
+      }
+      zip.file(`${base}-caption.txt`, $('caption').value);
+      download(await zip.generateAsync({ type: 'blob' }), `${base}.zip`);
+    } catch (e) { alert(e.message); }
+    btn.textContent = 'Скачать .zip';
+    btn.disabled = false;
+  });
+})();
+</script>
+</body>
+</html>

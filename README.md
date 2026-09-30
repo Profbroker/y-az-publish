@@ -18,6 +18,9 @@ y-az-publish/
 │       ├── yacht-page-loader.html Loader для страниц яхт (вставляется в T123 Tilda)
 │       └── prices-loader.html     Loader для блока цен
 │
+├── tools/
+│   └── story-to-post/index.html   Старые сторис → посты/карусели Instagram (в браузере, офлайн)
+│
 ├── (calc/)                        Калькуляторы — будут перенесены сюда позже из yacht-calc
 ├── (nav/)                         Меню — будет перенесено позже из yacht-az-nav
 └── (pages/)                       Лендинги (регата и т.д.) — позже
