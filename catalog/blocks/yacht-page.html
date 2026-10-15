@@ -710,6 +710,10 @@
   .yz-pa { gap: 12px; justify-content: flex-start; }
   .yz-pa-card { align-items: flex-start; text-align: left; }
   .yz-pa-card.is-popular::after { left: 0; transform: none; }
+  /* 4 пресета (с 30 мин) — eyebrow уходит отдельной строкой сверху,
+     иначе не влезает в 375px */
+  .yz-pa.is-4 { flex-wrap: wrap; row-gap: 6px; }
+  .yz-pa.is-4 .yz-pa-eyebrow { flex-basis: 100%; max-width: none; text-align: left; margin-right: 0; }
 }
 </style>
 
@@ -746,6 +750,7 @@
       pa_h_few:      'часа',
       pa_h_many:     'часов',
       pa_full_day:   'Полный день',
+      pa_30m:        '30 мин',
       pa_rate_unit:  '₼/ч',
       pa_currency:   '₼',
       pa_eyebrow:    'Часто выбирают:',
@@ -793,6 +798,7 @@
       pa_h_few:      'hours',
       pa_h_many:     'hours',
       pa_full_day:   'Full day',
+      pa_30m:        '30 min',
       pa_rate_unit:  '₼/h',
       pa_currency:   '₼',
       pa_eyebrow:    'Popular choices:',
@@ -840,6 +846,7 @@
       pa_h_few:      'saat',
       pa_h_many:     'saat',
       pa_full_day:   'Tam gün',
+      pa_30m:        '30 dəq',
       pa_rate_unit:  '₼/saat',
       pa_currency:   '₼',
       pa_eyebrow:    'Populyar seçimlər:',
@@ -1219,17 +1226,18 @@
      items = [{h: 1, total: 500}, {h: 3, total: 1100, popular: true}, {h: 6, total: 1900}] */
   function buildPriceAnchorHtml(items) {
     var html = '<div class="yz-price-slot">' +
-      '<div class="yz-pa">' +
+      '<div class="yz-pa' + (items.length > 3 ? ' is-4' : '') + '">' +
       '<div class="yz-pa-eyebrow">' + t.pa_eyebrow + '</div>';
     items.forEach(function (it) {
-      var label = it.h + ' ' + hourLabel(it.h);
+      var label = it.h === 0.5 ? t.pa_30m : it.h + ' ' + hourLabel(it.h);
       var rate  = (it.total / it.h);
       var cls   = 'yz-pa-card' + (it.popular ? ' is-popular' : '');
       html +=
         '<div class="' + cls + '">' +
           '<div class="yz-pa-h">' + label + '</div>' +
           '<div class="yz-pa-total">' + fmtN(it.total) + ' ' + t.pa_currency + '</div>' +
-          '<div class="yz-pa-rate">' + fmtN(rate) + ' ' + t.pa_rate_unit + '</div>' +
+          /* у 30 мин «₼/ч» не показываем (600 ₼/ч путает) — пустая строка держит выравнивание */
+          '<div class="yz-pa-rate">' + (it.h === 0.5 ? '&nbsp;' : fmtN(rate) + ' ' + t.pa_rate_unit) + '</div>' +
         '</div>';
     });
     html += '</div></div>';
@@ -1352,7 +1360,12 @@
           { h: mid, total: totMid, popular: true },
           { h: hi,  total: totHi  }
         ];
-        /* Сортировка по часам (1 → 6), независимо от того как названы
+        /* 30 мин — опциональный 4-й пресет из колонки m30 (только здесь,
+           каталог и калькулятор его не показывают). Пусто в текущем
+           сезоне → остаются 3 пресета. */
+        var m30 = +picked['m30'] || 0;
+        if (m30 > 0) items.push({ h: 0.5, total: m30 + fee });
+        /* Сортировка по часам (0.5 → 6), независимо от того как названы
            колонки в Sheets. Все карточки показывают «N часов». */
         items.sort(function (a, b) { return a.h - b.h; });
 
