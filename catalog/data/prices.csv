@@ -1,6 +1,6 @@
 id,name,emoji,slug,fee,seasonal,season,season_emoji,h1,h2,h3,h4,h5,h6,h7,h8,h9,discount_start,url_ru,url_en,url_az,season_start,season_end,m30
 Alora,Alora,,Alora,50,yes,high,🌞,250,200,200,200,200,150,150,150,150,2,/ru/yachts/alora,/en/yachts/alora,/az/yachts/alora,,,
-Alora,Alora,,Aora,50,yes,low,🍂,200,150,150,150,150,100,100,100,100,2,/ru/yachts/alora,/en/yachts/alora,/az/yachts/alora,,,
+Alora,Alora,,Alora,50,yes,low,🍂,200,150,150,150,150,100,100,100,100,2,/ru/yachts/alora,/en/yachts/alora,/az/yachts/alora,,,
 Caspian,Caspian,,Caspian,50,no,any,,600,300,240,180,180,,,,,2,/ru/yachts/caspian,/en/yachts/caspian,/az/yachts/caspian,,,
 Amina,Amina,,Amina,,yes,high,🌞,770,580,450,350,300,350,0,0,0,2,/ru/yachts/amina,/en/yachts/amina,/az/yachts/amina,,,
 Amina,Amina,,Amina,,yes,low,🍂,540,405,315,245,210,245,0,0,0,2,/ru/yachts/amina,/en/yachts/amina,/az/yachts/amina,,,300
